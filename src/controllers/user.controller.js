@@ -1,6 +1,6 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { User } from '.../models/user.model.js';
+import { User } from '../models/user.model.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 
@@ -17,55 +17,55 @@ const registerUser = asyncHandler(async (req, res) => {
   //  step 9: return response
 
   // Step 1: Get user Data
-  const { fullname, email, username, password } = req.body;
+  const { fullName, email, username, password } = req.body;
   console.log('email: ' + email);
 
   // Step 2: Validations
 
   // Checking if any field is empty
   if (
-    [fullname, email, username, password].some((field) => field?.trim() === '')
+    [fullName, email, username, password].some((field) => field?.trim() === '')
   ) {
     throw new ApiError(400, 'All fields are required.');
   }
 
-  // Fullname validation: at least 2 characters, only letters and spaces
-  if (fullname.trim().length < 2) {
-    throw new ApiError(400, 'Fullname must be at least 2 characters long.');
-  } else if (!/^[a-zA-Z\s]+$/.test(fullname.trim())) {
-    throw new ApiError(400, 'Fullname can only contain letters and spaces.');
-  }
+  //   // Fullname validation: at least 2 characters, only letters and spaces
+  //   if (fullname.trim().length < 2) {
+  //     throw new ApiError(400, 'Fullname must be at least 2 characters long.');
+  //   } else if (!/^[a-zA-Z\s]+$/.test(fullname.trim())) {
+  //     throw new ApiError(400, 'Fullname can only contain letters and spaces.');
+  //   }
 
-  // Email validation: must follow standard email format
-  const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
-  if (!emailRegex.test(email)) {
-    throw new ApiError(400, 'Please enter a valid email address.');
-  }
+  //   // Email validation: must follow standard email format
+  //   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+  //   if (!emailRegex.test(email)) {
+  //     throw new ApiError(400, 'Please enter a valid email address.');
+  //   }
 
-  // Username validation: at least 4 characters, alphanumeric, no spaces
-  if (username.length < 4) {
-    throw new ApiError(400, 'Username must be at least 4 characters long.');
-  } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
-    throw new ApiError(
-      400,
-      'Username can only contain alphanumeric characters without spaces.'
-    );
-  }
+  //   // Username validation: at least 4 characters, alphanumeric, no spaces
+  //   if (username.length < 4) {
+  //     throw new ApiError(400, 'Username must be at least 4 characters long.');
+  //   } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
+  //     throw new ApiError(
+  //       400,
+  //       'Username can only contain alphanumeric characters without spaces.'
+  //     );
+  //   }
 
-  // Password validation: at least 8 characters, must contain at least one letter and one number
-  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
-  if (password.length < 8) {
-    throw new ApiError(400, 'Password must be at least 8 characters long.');
-  } else if (!passwordRegex.test(password)) {
-    throw new ApiError(
-      400,
-      'Password must contain at least one letter and one number.'
-    );
-  }
+  //   // Password validation: at least 8 characters, must contain at least one letter and one number
+  //   const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+  //   if (password.length < 8) {
+  //     throw new ApiError(400, 'Password must be at least 8 characters long.');
+  //   } else if (!passwordRegex.test(password)) {
+  //     throw new ApiError(
+  //       400,
+  //       'Password must contain at least one letter and one number.'
+  //     );
+  //   }
   // ------------------------------------ Validations Complete ----------------------------------------------------------------
 
   // Step 3: check if user is already registered
-  const existedUser = findOne({
+  const existedUser = await User.findOne({
     $or: [{ email }, { username }],
   });
 
@@ -74,9 +74,18 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   // Step 4: check for images, check for avatar
-  // console.log(req.files);
+  //   console.log(req.files);
   const avatarLocalPath = req.files?.avatar[0]?.path;
-  const coverImageLocalPath = req.files?.coverImage[0]?.path;
+  //   const coverImageLocalPath = req.files?.coverImage[0]?.path;
+  //   console.log(avatarLocalPath);
+  let coverImageLocalPath;
+  if (
+    req.files &&
+    Array.isArray(req.files.coverImage) &&
+    req.files.coverImage.length > 0
+  ) {
+    coverImageLocalPath = req.files.coverImage[0].path;
+  }
 
   if (!avatarLocalPath) {
     throw new ApiError(400, 'Please upload an avatar image.');
@@ -84,6 +93,7 @@ const registerUser = asyncHandler(async (req, res) => {
 
   // step 5:upload them to cloudinary server, check for avatar
   const avatar = await uploadOnCloudinary(avatarLocalPath);
+  console.log(avatar);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
   if (!avatar) {
     throw new ApiError(500, 'Failed to upload avatar image to cloudinary.');
@@ -91,7 +101,7 @@ const registerUser = asyncHandler(async (req, res) => {
 
   //  Step 6: create user object and create entry into db
   const user = await User.create({
-    fullname,
+    fullName,
     email,
     username: username.toLowerCase(),
     password,
