@@ -29,39 +29,39 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'All fields are required.');
   }
 
-  //   // Fullname validation: at least 2 characters, only letters and spaces
-  //   if (fullname.trim().length < 2) {
-  //     throw new ApiError(400, 'Fullname must be at least 2 characters long.');
-  //   } else if (!/^[a-zA-Z\s]+$/.test(fullname.trim())) {
-  //     throw new ApiError(400, 'Fullname can only contain letters and spaces.');
-  //   }
+  // Fullname validation: at least 2 characters, only letters and spaces
+  if (fullName.trim().length < 2) {
+    throw new ApiError(400, 'Fullname must be at least 2 characters long.');
+  } else if (!/^[a-zA-Z\s]+$/.test(fullName.trim())) {
+    throw new ApiError(400, 'Fullname can only contain letters and spaces.');
+  }
 
-  //   // Email validation: must follow standard email format
-  //   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
-  //   if (!emailRegex.test(email)) {
-  //     throw new ApiError(400, 'Please enter a valid email address.');
-  //   }
+  // Email validation: must follow standard email format
+  const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+  if (!emailRegex.test(email)) {
+    throw new ApiError(400, 'Please enter a valid email address.');
+  }
 
-  //   // Username validation: at least 4 characters, alphanumeric, no spaces
-  //   if (username.length < 4) {
-  //     throw new ApiError(400, 'Username must be at least 4 characters long.');
-  //   } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
-  //     throw new ApiError(
-  //       400,
-  //       'Username can only contain alphanumeric characters without spaces.'
-  //     );
-  //   }
+  // Username validation: at least 4 characters, alphanumeric, no spaces
+  if (username.length < 4) {
+    throw new ApiError(400, 'Username must be at least 4 characters long.');
+  } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
+    throw new ApiError(
+      400,
+      'Username can only contain alphanumeric characters without spaces.'
+    );
+  }
 
-  //   // Password validation: at least 8 characters, must contain at least one letter and one number
-  //   const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
-  //   if (password.length < 8) {
-  //     throw new ApiError(400, 'Password must be at least 8 characters long.');
-  //   } else if (!passwordRegex.test(password)) {
-  //     throw new ApiError(
-  //       400,
-  //       'Password must contain at least one letter and one number.'
-  //     );
-  //   }
+  //  Password validation: at least 8 characters, must contain at least one letter and one number
+  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+  if (password.length < 8) {
+    throw new ApiError(400, 'Password must be at least 8 characters long.');
+  } else if (!passwordRegex.test(password)) {
+    throw new ApiError(
+      400,
+      'Password must contain at least one letter and one number.'
+    );
+  }
   // ------------------------------------ Validations Complete ----------------------------------------------------------------
 
   // Step 3: check if user is already registered
