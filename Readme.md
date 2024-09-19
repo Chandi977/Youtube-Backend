@@ -166,3 +166,11 @@ VideoTube is a backend service for a video streaming platform. It handles user a
     - /src/utils/ApiResponse.js: Custom response class for API responses.
     - /src/utils/cloudinary.js: Utility for uploading files to Cloudinary.
     - /src/routes/user.routes.js: Routes related to user operations.
+
+## Thanks
+Special thanks to [Hitesh Choudhary](https://youtu.be/7fjOw8ApZ1I?si=J0m9Yjs3vdXD4vUp) for his Complete Backend Developer Playlist, which greatly helped me learn backend development.
+
+## License
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+
