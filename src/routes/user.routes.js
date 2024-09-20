@@ -3,6 +3,7 @@ import {
   loginUser,
   registerUser,
   logoutUser,
+  refreshAccessToken,
 } from '../controllers/user.controller.js'; // Importing controller functions for user-related actions.
 import { upload } from '../middlewares/multer.middleware.js'; // Importing middleware for handling file uploads (Multer).
 import { verifyJWT } from '../middlewares/auth.middleware.js'; // Importing middleware to verify JSON Web Tokens (JWT).
@@ -32,4 +33,5 @@ router.route('/login').post(loginUser); // Controller function to handle user lo
 // The user needs to be authenticated with JWT to access this route
 router.route('/logout').post(verifyJWT, logoutUser); // Controller function to handle logout, with JWT verification for security.
 
+router.route('/refresh-token').post(refreshAccessToken);
 export default router; // Exporting the router to use it in other parts of the application.

@@ -20,8 +20,8 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
     // Querying the database for the user with the decoded token's ID, excluding password and refreshToken from the result
-    const user = await User.findOne(decodedToken?._id).select(
-      '-password - refreshToken'
+    const user = await User.findById(decodedToken?._id).select(
+      '-password -refreshToken'
     );
 
     // If no user is found with the provided token, throw an invalid access token error

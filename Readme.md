@@ -64,8 +64,6 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    ```bash
    npm start
    ```
-
-
 ## API Endpoints
 
 ### User Registration
@@ -166,6 +164,70 @@ VideoTube is a backend service for a video streaming platform. It handles user a
     - /src/utils/ApiResponse.js: Custom response class for API responses.
     - /src/utils/cloudinary.js: Utility for uploading files to Cloudinary.
     - /src/routes/user.routes.js: Routes related to user operations.
+
+    ```
+    Youtube Backend/
+    ├── .env
+    ├── .gitignore
+    ├── package.json
+    ├── package-lock.json
+    ├── README.md
+    ├── server.js
+    └── src/
+        ├── db/
+        │   └── index.js
+        ├── controllers/
+        │   ├── comment.controller.js
+        │   ├── dashboard.controller.js
+        │   ├── healthcheck.controller.js
+        │   ├── like.controller.js
+        │   ├── playlist.controller.js
+        │   ├── subscription.controller.js
+        │   ├── tweet.controller.js
+        │   ├── user.controller.js
+        │   └── video.controller.js
+        ├── middleware/
+        │   ├── auth.middleware.js
+        │   └── multer.middleware.js
+        ├── models/
+        │   ├── comment.model.js
+        │   ├── like.model.js
+        │   ├── playlist.model.js
+        │   ├── subscription.model.js
+        │   ├── tweet.model.js
+        │   ├── user.model.js
+        │   └── video.model.js
+        ├── routes/
+        │   ├── comment.routes.js
+        │   ├── dashboard.routes.js
+        │   ├── healthcheck.routes.js
+        │   ├── like.routes.js
+        │   ├── playlist.routes.js
+        │   ├── subscription.routes.js
+        │   ├── tweet.routes.js
+        │   ├── user.routes.js
+        │   └── video.routes.js
+        └── utils/
+            ├── ApiError.js
+            ├── ApiResponse.js
+            └── asyncHandler.js
+    ```
+
+## Features
+1. Server Setup
+    We use Express.js to handle incoming requests, set up CORS, parse JSON and URL-encoded data, and serve static files.
+2. MongoDB Connection
+    We connect to MongoDB using Mongoose with the following configuration:
+3. JWT Authentication
+    Token-based authentication is handled using JWT. We generate and verify tokens to ensure secure access.
+4. File Uploads with Multer
+    Files are uploaded using Multer and temporarily stored on the server before being uploaded to Cloudinary.
+5. Cloudinary Integration
+    Cloudinary is used for storing uploaded files in the cloud. After successful upload, the temporary local files are deleted.
+6. Error Handling
+    Custom error handling is done using the ApiError class to manage different types of errors.
+7. Password Encryption
+    Bcrypt is used to hash passwords before saving them to the database for better security.
 
 ## Thanks
 Special thanks to [Hitesh Choudhary](https://youtu.be/7fjOw8ApZ1I?si=J0m9Yjs3vdXD4vUp) for his Complete Backend Developer Playlist, which greatly helped me learn backend development.
