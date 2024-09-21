@@ -1,212 +1,232 @@
-import { asyncHandler } from '../utils/asyncHandler.js'; // Import async handler to manage async errors
-import { ApiError } from '../utils/ApiError.js'; // Custom error handler for API responses
-import { User } from '../models/user.model.js'; // User model for MongoDB interactions
-import { uploadOnCloudinary } from '../utils/cloudinary.js'; // Cloudinary utility for image uploads
-import { ApiResponse } from '../utils/ApiResponse.js'; // Standard API response wrapper
-import jwt from 'jsonwebtoken'; //
-// Function to generate access and refresh tokens for a user
+import { asyncHandler } from '../utils/asyncHandler.js'; // Async error handling ke liye import
+import { ApiError } from '../utils/ApiError.js'; // Custom error handling ke liye import
+import { User } from '../models/user.model.js'; // MongoDB user model ke liye import
+import { uploadOnCloudinary } from '../utils/cloudinary.js'; // Cloudinary pe images upload karne ka utility
+import { ApiResponse } from '../utils/ApiResponse.js'; // Standard API response wrapper ke liye import
+import jwt from 'jsonwebtoken'; // JWT (JSON Web Token) ke liye import
+
+// Function jo user ke liye access aur refresh tokens generate karega
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
-    const user = await User.findById(userId); // Find user by their ID
-    const accessToken = user.generateAccessToken(); // Generate access token for the user
-    const refreshToken = user.generateRefreshToken(); // Generate refresh token for the user
+    const user = await User.findById(userId); // User ko ID se dhundna
+    const accessToken = user.generateAccessToken(); // User ke liye access token generate karna
+    const refreshToken = user.generateRefreshToken(); // User ke liye refresh token generate karna
 
-    user.refreshToken = refreshToken; // Save refresh token to the user document
-    await user.save({ validateBeforeSave: false }); // Save user to the database without validating
+    user.refreshToken = refreshToken; // User document me refresh token ko save karna
+    await user.save({ validateBeforeSave: false }); // User ko bina validation ke database me save karna
 
-    return { accessToken, refreshToken }; // Return generated tokens
+    return { accessToken, refreshToken }; // Generated tokens ko return karna
   } catch (error) {
     throw new ApiError(
       500,
-      'Something went wrong while generating refresh and access token',
+      'Refresh aur access token generate karne me kuch galat ho gaya',
       error
-    ); // Throw an error if token generation fails
+    ); // Token generation me error hone par error throw karna
   }
 };
 
-// Middleware to handle user registration
+// User registration ke liye middleware
 const registerUser = asyncHandler(async (req, res) => {
-  //  Step 1: Get user data from the request body
+  // Step 1: Request body se user data lena
   const { fullName, email, username, password } = req.body;
 
-  // Step 2: Validate required fields are not empty
+  // Step 2: Required fields ka validation karna
   if (
     [fullName, email, username, password].some((field) => field?.trim() === '')
   ) {
-    throw new ApiError(400, 'All fields are required.');
+    throw new ApiError(400, 'Sab fields required hain.'); // Error agar koi field khali ho
   }
 
-  // Fullname validation: minimum 2 characters and only letters and spaces allowed
+  // Fullname validation: minimum 2 characters aur sirf letters aur spaces allowed
   if (fullName.trim().length < 2) {
-    throw new ApiError(400, 'Fullname must be at least 2 characters long.');
+    throw new ApiError(
+      400,
+      'Fullname mein kam se kam 2 characters hone chahiye.'
+    );
   } else if (!/^[a-zA-Z\s]+$/.test(fullName.trim())) {
-    throw new ApiError(400, 'Fullname can only contain letters and spaces.');
+    throw new ApiError(
+      400,
+      'Fullname sirf letters aur spaces contain kar sakta hai.'
+    );
   }
 
-  // Email validation using a regex pattern
+  // Email validation ke liye regex pattern
   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
   if (!emailRegex.test(email)) {
-    throw new ApiError(400, 'Please enter a valid email address.');
+    throw new ApiError(400, 'Kripya ek valid email address enter karein.');
   }
 
-  // Username validation: minimum 4 characters, alphanumeric, no spaces allowed
+  // Username validation: minimum 4 characters, alphanumeric, bina spaces
   if (username.length < 4) {
-    throw new ApiError(400, 'Username must be at least 4 characters long.');
+    throw new ApiError(
+      400,
+      'Username mein kam se kam 4 characters hone chahiye.'
+    );
   } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
     throw new ApiError(
       400,
-      'Username can only contain alphanumeric characters without spaces.'
+      'Username sirf alphanumeric characters bina spaces ke contain kar sakta hai.'
     );
   }
 
-  // Password validation: minimum 8 characters, must contain letters and numbers
+  // Password validation: minimum 8 characters, letters aur numbers hone chahiye
   const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
   if (password.length < 8) {
-    throw new ApiError(400, 'Password must be at least 8 characters long.');
+    throw new ApiError(
+      400,
+      'Password mein kam se kam 8 characters hone chahiye.'
+    );
   } else if (!passwordRegex.test(password)) {
     throw new ApiError(
       400,
-      'Password must contain at least one letter and one number.'
+      'Password mein kam se kam ek letter aur ek number hona chahiye.'
     );
   }
 
-  // Step 3: Check if the user already exists (by email or username)
+  // Step 3: Check karna agar user pehle se exist karta hai (email ya username se)
   const existedUser = await User.findOne({
     $or: [{ email }, { username }],
   });
 
   if (existedUser) {
-    throw new ApiError(409, 'User already registered'); // Throw error if user already exists
+    throw new ApiError(409, 'User pehle se registered hai'); // Agar user pehle se hai to error throw karna
   }
 
-  // Step 4: Check for image uploads, specifically an avatar
-  const avatarLocalPath = req.files?.avatar[0]?.path; // Path of the uploaded avatar image
+  // Step 4: Image uploads check karna, specifically avatar
+  const avatarLocalPath = req.files?.avatar[0]?.path; // Uploaded avatar image ka path
   let coverImageLocalPath; // Optional cover image path
   if (
     req.files &&
     Array.isArray(req.files.coverImage) &&
     req.files.coverImage.length > 0
   ) {
-    coverImageLocalPath = req.files.coverImage[0].path; // Path of the cover image if uploaded
+    coverImageLocalPath = req.files.coverImage[0].path; // Cover image ka path agar uploaded hai
   }
 
   if (!avatarLocalPath) {
-    throw new ApiError(400, 'Please upload an avatar image.'); // Throw error if avatar is not uploaded
+    throw new ApiError(400, 'Kripya ek avatar image upload karein.'); // Agar avatar nahi hai to error throw karna
   }
 
-  // Step 5: Upload avatar and optional cover image to Cloudinary
-  const avatar = await uploadOnCloudinary(avatarLocalPath); // Upload avatar to Cloudinary
-  const coverImage = await uploadOnCloudinary(coverImageLocalPath); // Upload cover image to Cloudinary
+  // Step 5: Avatar aur optional cover image ko Cloudinary pe upload karna
+  const avatar = await uploadOnCloudinary(avatarLocalPath); // Avatar ko Cloudinary pe upload karna
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath); // Cover image ko Cloudinary pe upload karna
   if (!avatar) {
-    throw new ApiError(500, 'Failed to upload avatar image to cloudinary.'); // Throw error if avatar upload fails
+    throw new ApiError(
+      500,
+      'Avatar image ko Cloudinary pe upload karne me failure.'
+    ); // Agar avatar upload fail ho to error
   }
 
-  // Step 6: Create new user object and save it to the database
+  // Step 6: Naya user object create karna aur database me save karna
   const user = await User.create({
     fullName,
     email,
     username: username.toLowerCase(),
     password,
-    avatar: avatar.url, // Save avatar URL from Cloudinary
-    coverImage: coverImage?.url || '', // Save cover image URL if available, or empty string
+    avatar: avatar.url, // Cloudinary se avatar URL ko save karna
+    coverImage: coverImage?.url || '', // Cover image URL save karna agar available ho, ya khali string
   });
 
-  // Step 7: Remove password and refresh token from the user object before returning it
+  // Step 7: Password aur refresh token ko user object se remove karna response se pehle
   const createdUser = await User.findById(user._id).select(
     '-password -refreshToken'
   );
 
-  // Step 8: Check if user creation was successful
+  // Step 8: Check karna agar user creation successful hai
   if (!createdUser) {
-    throw new ApiError(500, 'Failed to create user while registering a user.'); // Throw error if user creation fails
+    throw new ApiError(
+      500,
+      'User registration ke dauran user create karne me failure.'
+    ); // Agar user creation fail ho to error
   }
 
-  // Step 9: Return successful response with created user data
+  // Step 9: Successful response return karna created user data ke sath
   return res
     .status(201)
-    .json(new ApiResponse(200, createdUser, 'User registered successfully '));
+    .json(new ApiResponse(200, createdUser, 'User successfully registered.'));
 });
 
-// Middleware to handle user login
+// User login ke liye middleware
 const loginUser = asyncHandler(async (req, res) => {
-  // Step 1: Get user data from the request body
+  // Step 1: Request body se user data lena
   const { email, username, password } = req.body;
 
   if (!username && !email) {
-    throw new ApiError(400, 'Email or Username is required.'); // Throw error if both fields are not provided
+    throw new ApiError(400, 'Email ya Username required hai.'); // Agar dono fields nahi hai to error throw karna
   }
-  //   console.log('email: ' + email + 'pass: ' + password);
-  // Step 2: Find user by email or username
+
+  // Step 2: User ko email ya username se dhundna
   const user = await User.findOne({
     $or: [{ email }, { username }],
   });
 
   if (!user) {
-    throw new ApiError(401, 'User does not exist.'); // Throw error if user is not found
+    throw new ApiError(401, 'User exist nahi karta.'); // Agar user nahi milta to error
   }
 
-  // Step 3: Validate the password
+  // Step 3: Password ko validate karna
   const isPasswordValid = await user.isPasswordCorrect(password);
   if (!isPasswordValid) {
-    throw new ApiError(401, 'Invalid user credentials.'); // Throw error if password is incorrect
+    throw new ApiError(401, 'Invalid user credentials.'); // Agar password galat hai to error
   }
 
-  // Step 4: Generate access and refresh tokens for the user
+  // Step 4: User ke liye access aur refresh tokens generate karna
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
 
   const loggedInUser = await User.findById(user._id).select(
     '-password -refreshToken'
-  ); // Retrieve user without password and refresh token
+  ); // User ko password aur refresh token ke bina lena
 
-  // Step 5: Send access and refresh tokens as HTTP-only cookies
+  // Step 5: Access aur refresh tokens ko HTTP-only cookies ke roop me bhejna
   const options = {
     httpOnly: true,
     secure: true,
   };
   return res
     .status(200)
-    .cookie('accessToken', accessToken, options) // Set access token as a cookie
-    .cookie('refreshToken', refreshToken, options) // Set refresh token as a cookie
+    .cookie('accessToken', accessToken, options) // Access token ko cookie me set karna
+    .cookie('refreshToken', refreshToken, options) // Refresh token ko cookie me set karna
     .json(
       new ApiResponse(
         200,
         { user: loggedInUser, accessToken, refreshToken },
-        'User logged in successfully.'
+        'User successfully logged in.'
       )
     );
 });
 
-// Middleware to handle user logout
+// User logout ke liye middleware
 const logoutUser = asyncHandler(async (req, res) => {
-  // Step 1: Remove refresh token from the user in the database
+  // Step 1: Database me user se refresh token ko remove karna
   await User.findByIdAndUpdate(
     req.user._id,
     { $set: { refreshToken: undefined } },
     { new: true }
   );
 
-  // Step 2: Clear access and refresh token cookies from the client
+  // Step 2: Client se access aur refresh token cookies ko clear karna
   const options = {
     httpOnly: true,
     secure: true,
   };
   return res
     .status(200)
-    .clearCookie('accessToken', options) // Clear access token cookie
-    .clearCookie('refreshToken', options) // Clear refresh token cookie
-    .json(new ApiResponse(200, {}, 'User logged out successfully.')); // Return success response
+    .clearCookie('accessToken', options) // Access token cookie ko clear karna
+    .clearCookie('refreshToken', options) // Refresh token cookie ko clear karna
+    .json(new ApiResponse(200, {}, 'User successfully logged out.')); // Success response return karna
 });
 
+// Access token refresh karne ka middleware
 const refreshAccessToken = asyncHandler(async (req, res) => {
-  // Step 1: Get refresh token from the request cookies
+  // Step 1: Request cookies se refresh token lena
   const incomingRefreshToken = req.cookies.refreshToken || req.body.accessToken;
   if (!incomingRefreshToken) {
-    throw new ApiError(401, 'Unauthorized request');
+    throw new ApiError(401, 'Unauthorized request'); // Agar refresh token nahi hai to error
   }
   try {
-    // Step 2: Validate the refresh token in the database
+    // Step 2: Database me refresh token ko validate karna
     const decodedToken = jwt.verify(
       incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
@@ -214,14 +234,14 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
     const user = await User.findById(decodedToken.access?._id);
     if (!user) {
-      throw new ApiError(401, 'Invalid refresh token');
+      throw new ApiError(401, 'Invalid refresh token'); // Agar user nahi milta to error
     }
 
     if (incomingRefreshToken !== user?.refreshToken) {
-      throw new ApiError(401, 'Refresh token is expired or used');
+      throw new ApiError(401, 'Refresh token expired ya used hai'); // Agar refresh token expired ya used hai to error
     }
 
-    // Step 3: Generate new access and refresh tokens for the user
+    // Step 3: User ke liye naya access aur refresh tokens generate karna
     const options = {
       httpOnly: true,
       secure: true,
@@ -242,38 +262,41 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         )
       );
   } catch (error) {
-    throw new ApiError(401, error?.message || 'Invalid refresh token');
+    throw new ApiError(401, error?.message || 'Invalid refresh token'); // Error agar refresh token invalid hai
   }
 });
 
+// Current password change karne ka middleware
 const changeCurrrentPassword = asyncHandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user?._id);
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
 
   if (!isPasswordCorrect) {
-    throw new ApiError(400, 'Invaliid old password');
+    throw new ApiError(400, 'Invalid old password'); // Agar old password galat hai to error
   }
 
-  user.password = newPassword;
-  await user.save({ validateBeforeSave: false });
+  user.password = newPassword; // Naya password set karna
+  await user.save({ validateBeforeSave: false }); // User ko save karna bina validation ke
 
   return res
     .status(200)
-    .json(new ApiResponse(200, {}, 'Password changed successfully'));
+    .json(new ApiResponse(200, {}, 'Password successfully changed')); // Success response return karna
 });
 
+// Current user ko fetch karne ka middleware
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
-    .json(200, req.user, 'Current user fetched successfully');
+    .json(200, req.user, 'Current user successfully fetched'); // Current user ka data return karna
 });
 
+// Account details update karne ka middleware
 const updateAcccountDetails = asyncHandler(async (req, res) => {
   const { fullName, email } = req.body;
 
   if (!fullName || !email) {
-    throw new ApiError(400, 'Full name and email are required');
+    throw new ApiError(400, 'Full name aur email required hain'); // Agar full name ya email nahi hai to error
   }
 
   const user = await User.findByIdAndUpdate(
@@ -285,63 +308,65 @@ const updateAcccountDetails = asyncHandler(async (req, res) => {
       },
     },
     { new: true }
-  ).select('-password');
+  ).select('-password'); // Password ko select nahi karna
 
   return res
     .status(200)
-    .json(new ApiResponse(200, user, 'Accoount details updated successfully'));
+    .json(new ApiResponse(200, user, 'Account details successfully updated')); // Success response return karna
 });
 
+// User avatar update karne ka middleware
 const updateUserAvatar = asyncHandler(async (req, res) => {
   const avatarLocalPath = req.file?.path;
   if (!avatarLocalPath) {
-    throw new ApiError(400, 'Avatar file is missing.');
+    throw new ApiError(400, 'Avatar file missing hai.'); // Agar avatar file nahi hai to error
   }
-  const avatar = await uploadOnCloudinary(avatarLocalPath);
-  if (avatar.url) {
-    throw new ApiError(400, 'Error while uploading on avatar');
+  const avatar = await uploadOnCloudinary(avatarLocalPath); // Avatar ko Cloudinary pe upload karna
+  if (!avatar.url) {
+    throw new ApiError(400, 'Avatar upload karne me error aaya'); // Agar avatar upload me error aaya to error
   }
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set: {
-        avatar: avatar.url,
+        avatar: avatar.url, // Avatar URL ko update karna
       },
     },
     { new: true }
-  ).select('-password');
+  ).select('-password'); // Password ko select nahi karna
 
   return res
     .status(200)
-    .json(new ApiResponse(200, user, 'User avatar updated successfully'));
+    .json(new ApiResponse(200, user, 'User avatar successfully updated')); // Success response return karna
 });
 
+// User cover image update karne ka middleware
 const updateUserCoverImage = asyncHandler(async (req, res) => {
   const coverImageLocalPath = req.file?.path;
 
   if (!coverImageLocalPath) {
-    throw new ApiError(400, 'CoverImage file is missing.');
+    throw new ApiError(400, 'CoverImage file missing hai.'); // Agar cover image file nahi hai to error
   }
 
-  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath); // Cover image ko Cloudinary pe upload karna
 
-  if (coverImage.url) {
-    throw new ApiError(400, 'Error while uploading on coverImage');
+  if (!coverImage.url) {
+    throw new ApiError(400, 'CoverImage upload karne me error aaya'); // Agar cover image upload me error aaya to error
   }
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set: {
-        coverImage: coverImage.url,
+        coverImage: coverImage.url, // Cover image URL ko update karna
       },
     },
     { new: true }
-  ).select('-password');
+  ).select('-password'); // Password ko select nahi karna
 
   return res
     .status(200)
-    .json(new ApiResponse(200, user, 'User coverImage updated successfully'));
+    .json(new ApiResponse(200, user, 'User coverImage successfully updated')); // Success response return karna
 });
 
 export {
