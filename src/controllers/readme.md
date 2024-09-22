@@ -1,6 +1,3 @@
-# Updating the README content with all 10 methods and detailed descriptions for each method in user.controller.js
-
-readme_content = """
 # User Controller - API Documentation
 
 This file documents the **user.controller.js** file, which manages various user-related functionalities in your application. The controller includes 10 methods for tasks such as user registration, login, token handling, image uploads, and account updates.
@@ -562,4 +559,3 @@ Utility function for uploading images to Cloudinary and returning the uploaded i
 ## Error Handling
 
 This controller uses `ApiError` for custom error handling and `asyncHandler` to manage errors in asynchronous functions.
-"""
