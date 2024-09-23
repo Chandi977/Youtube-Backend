@@ -5,7 +5,7 @@ import { uploadOnCloudinary } from '../utils/cloudinary.js'; // Cloudinary pe im
 import { ApiResponse } from '../utils/ApiResponse.js'; // Standard API response wrapper ke liye import
 import jwt from 'jsonwebtoken'; // JWT (JSON Web Token) ke liye import
 import cloudinary from 'cloudinary';
-
+import mongoose from 'mongoose';
 // Function jo user ke liye access aur refresh tokens generate karega
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -418,7 +418,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
     },
     {
       $addFields: {
-        subsriberCount: {
+        subscriberCount: {
           $size: '$subscribers', // Subscribers ka count nikalna
         },
         channelsSubscribedTo: {
@@ -440,7 +440,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
         username: 1,
         avatar: 1,
         coverImage: 1,
-        subsriberCount: 1, // Jo data return karna hai, usko select karna
+        subscriberCount: 1, // Jo data return karna hai, usko select karna
         channelsSubscribedTo: 1,
         isSubscribed: 1,
       },
@@ -450,8 +450,8 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   console.log(channel); // Debugging ke liye channel data ko console mein print karna
 
   // Agar channel nahi mila to error throw karna
-  if (!channel?.length) {
-    throw new ApiError(404, 'Channel does not found on getUserChannelProfile');
+  if (!channel || channel.length === 0) {
+    throw new ApiError(404, 'Channel not found on getUserChannelProfile');
   }
 
   // Agar sab theek hai, to user profile ka response send karna
@@ -462,6 +462,68 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
       'User channel profile successfully fetched'
     )
   );
+});
+
+const getWatchHistory = asyncHandler(async (req, res) => {
+  // User ke watch history ko aggregate pipeline ke through fetch karna
+  console.log('User ID:', req.user._id);
+  const user = await User.aggregate([
+    {
+      $match: {
+        _id: new mongoose.Types.ObjectId(req.user._id), // User ko match karna uske _id se
+      },
+    },
+    {
+      $lookup: {
+        from: 'videos', // Videos collection se data lana
+        localField: 'watchHistory', // User ke watchHistory field ko video _id se match karna
+        foreignField: '_id', // Videos collection mein video _id ko match karna
+        as: 'watchHistory', // Fetched videos ka data 'watchHistory' field mein rakhna
+        pipeline: [
+          {
+            $lookup: {
+              from: 'users', // Video ke owner ka data lana users collection se
+              localField: 'owner', // Video ke owner _id ko match karna
+              foreignField: '_id', // Owner ka _id match karna
+              as: 'owner', // Owner data ko 'owner' field mein rakhna
+              pipeline: [
+                {
+                  $project: {
+                    fullName: 1, // Owner ke fullName ko project karna
+                    username: 1, // Owner ke username ko project karna
+                    avatar: 1, // Owner ke avatar ko project karna
+                  },
+                },
+              ],
+            },
+          },
+          {
+            $addFields: {
+              owner: {
+                $first: '$owner', // Owner ka pehla element 'owner' field mein daalna
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+  console.log(user);
+  // Agar user nahi mila ya uski watch history empty hai, toh error throw karna
+  if (!user.length || !user[0].watchHistory.length) {
+    throw new ApiError(404, 'No watch history found for this user.');
+  }
+
+  // Watch history ko successfully fetch kar ke return karna
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        user[0].watchHistory,
+        'Watch history fetched successfully.'
+      )
+    );
 });
 
 export {
@@ -475,4 +537,5 @@ export {
   updateUserAvatar,
   updateUserCoverImage,
   getUserChannelProfile,
+  getWatchHistory,
 };
