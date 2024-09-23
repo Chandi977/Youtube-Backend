@@ -385,6 +385,83 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
   );
 });
 
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const { username } = req.params;
+
+  // Agar username nahi diya gaya ya empty string hai, toh error throw karo
+  if (!username?.trim()) {
+    throw new ApiError(400, 'Username is missing in getUserChannelProfile');
+  }
+
+  // User channel profile ko aggregate pipeline ke through fetch karna
+  const channel = User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase(), // Username ko lowercase mein match karna
+      },
+    },
+    {
+      $lookup: {
+        from: 'subscriptions', // Subscriptions collection se data lana
+        localField: '_id',
+        foreignField: 'channel', // Channel field ko user _id se match karna
+        as: 'subscribers', // Subscribers ke data ko 'subscribers' field mein rakhna
+      },
+    },
+    {
+      $lookup: {
+        from: 'subscriptions', // Doosri baar subscriptions collection ko use karna
+        localField: '_id',
+        foreignField: 'subscriber', // Jo user hai, unke subscribed channels fetch karna
+        as: 'subscribedTo', // Subscribed channels ka data 'subscribedTo' field mein
+      },
+    },
+    {
+      $addFields: {
+        subsriberCount: {
+          $size: '$subscribers', // Subscribers ka count nikalna
+        },
+        channelsSubscribedTo: {
+          $size: '$subscribedTo', // Kitne channels ko subscribe kiya hai user, iska count
+        },
+        isSubscribed: {
+          if: { $in: [req.user?._id, '$subscribers.subscriber'] }, // Kya user ne iss channel ko subscribe kiya hai?
+          then: true,
+          else: false,
+        },
+      },
+    },
+    {
+      $project: {
+        fullName: 1,
+        email: 1,
+        username: 1,
+        avatar: 1,
+        coverImage: 1,
+        subsriberCount: 1, // Jo data return karna hai, usko select karna
+        channelsSubscribedTo: 1,
+        isSubscribed: 1,
+      },
+    },
+  ]);
+
+  console.log(channel); // Debugging ke liye channel data ko console mein print karna
+
+  // Agar channel nahi mila to error throw karna
+  if (!channel?.length) {
+    throw new ApiError(404, 'Channel does not found on getUserChannelProfile');
+  }
+
+  // Agar sab theek hai, to user profile ka response send karna
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      channel[0], // Pehla result return karna
+      'User channel profile successfully fetched'
+    )
+  );
+});
+
 export {
   registerUser,
   loginUser,
@@ -395,4 +472,5 @@ export {
   updateAcccountDetails,
   updateUserAvatar,
   updateUserCoverImage,
+  getUserChannelProfile,
 };
