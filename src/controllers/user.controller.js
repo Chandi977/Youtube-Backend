@@ -4,6 +4,7 @@ import { User } from '../models/user.model.js'; // MongoDB user model ke liye im
 import { uploadOnCloudinary } from '../utils/cloudinary.js'; // Cloudinary pe images upload karne ka utility
 import { ApiResponse } from '../utils/ApiResponse.js'; // Standard API response wrapper ke liye import
 import jwt from 'jsonwebtoken'; // JWT (JSON Web Token) ke liye import
+import cloudinary from 'cloudinary';
 
 // Function jo user ke liye access aur refresh tokens generate karega
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -221,7 +222,8 @@ const logoutUser = asyncHandler(async (req, res) => {
 // Access token refresh karne ka middleware
 const refreshAccessToken = asyncHandler(async (req, res) => {
   // Step 1: Request cookies se refresh token lena
-  const incomingRefreshToken = req.cookies.refreshToken || req.body.accessToken;
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
   if (!incomingRefreshToken) {
     throw new ApiError(401, 'Unauthorized request'); // Agar refresh token nahi hai to error
   }
@@ -232,7 +234,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       process.env.REFRESH_TOKEN_SECRET
     );
 
-    const user = await User.findById(decodedToken.access?._id);
+    const user = await User.findById(decodedToken?._id);
     if (!user) {
       throw new ApiError(401, 'Invalid refresh token'); // Agar user nahi milta to error
     }
@@ -257,7 +259,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       .json(
         new ApiResponse(
           200,
-          { accessToken, newRefreshToken },
+          { accessToken, refreshToken: newRefreshToken },
           'Access token refreshed'
         )
       );
@@ -267,9 +269,14 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 });
 
 // Current password change karne ka middleware
-const changeCurrrentPassword = asyncHandler(async (req, res) => {
+const changeCurrentPassword = asyncHandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user?._id);
+  console.log('User ID:', req.user?._id);
+
+  if (!user) {
+    throw new ApiError(404, 'User not found');
+  }
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
 
   if (!isPasswordCorrect) {
@@ -288,7 +295,7 @@ const changeCurrrentPassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
-    .json(200, req.user, 'Current user successfully fetched'); // Current user ka data return karna
+    .json(new ApiResponse(200, req.user, 'Current user successfully fetched')); // Current user ka data return karna
 });
 
 // Account details update karne ka middleware
@@ -340,33 +347,42 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, 'User avatar successfully updated')); // Success response return karna
 });
 
-// User cover image update karne ka middleware
+// Cloudinary se image delete karne ka function
+const deleteFromCloudinary = async (imageUrl) => {
+  const publicId = imageUrl.split('/').pop().split('.')[0]; // URL se public ID nikalna
+  await cloudinary.v2.uploader.destroy(publicId); // Cloudinary se image delete karna
+};
+
 const updateUserCoverImage = asyncHandler(async (req, res) => {
   const coverImageLocalPath = req.file?.path;
 
   if (!coverImageLocalPath) {
-    throw new ApiError(400, 'CoverImage file missing hai.'); // Agar cover image file nahi hai to error
+    throw new ApiError(400, 'Cover image file missing hai'); // Agar cover image file nahi hai to error
   }
 
-  const coverImage = await uploadOnCloudinary(coverImageLocalPath); // Cover image ko Cloudinary pe upload karna
-
-  if (!coverImage.url) {
-    throw new ApiError(400, 'CoverImage upload karne me error aaya'); // Agar cover image upload me error aaya to error
+  const user = await User.findById(req.user?._id).select('coverImage'); // User ko dhoondna
+  if (!user) {
+    throw new ApiError(404, 'User nahi mila'); // Agar user nahi milta to error
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.user?._id,
-    {
-      $set: {
-        coverImage: coverImage.url, // Cover image URL ko update karna
-      },
-    },
-    { new: true }
-  ).select('-password'); // Password ko select nahi karna
+  // Agar purani cover image hai to use Cloudinary se delete karna
+  if (user.coverImage) {
+    await deleteFromCloudinary(user.coverImage); // Purani image ko delete karna
+  }
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, user, 'User coverImage successfully updated')); // Success response return karna
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath); // Nayi cover image ko Cloudinary pe upload karna
+  console.log(coverImage);
+  if (!coverImage || !coverImage.url) {
+    throw new ApiError(400, 'Cover image upload karne me error aaya'); // Agar upload me error aata hai to error
+  }
+
+  user.coverImage = coverImage.url; // User ki cover image ko update karna
+
+  await user.save({ validateBeforeSave: false }); // User ko save karna bina validation ke
+
+  return res.status(200).json(
+    new ApiResponse(200, user, 'Cover image successfully update ho gayi') // Success response return karna
+  );
 });
 
 export {
@@ -374,7 +390,7 @@ export {
   loginUser,
   logoutUser,
   refreshAccessToken,
-  changeCurrrentPassword,
+  changeCurrentPassword,
   getCurrentUser,
   updateAcccountDetails,
   updateUserAvatar,
