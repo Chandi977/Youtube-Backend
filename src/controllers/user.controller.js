@@ -394,7 +394,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   }
 
   // User channel profile ko aggregate pipeline ke through fetch karna
-  const channel = User.aggregate([
+  const channel = await User.aggregate([
     {
       $match: {
         username: username?.toLowerCase(), // Username ko lowercase mein match karna
@@ -425,9 +425,11 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
           $size: '$subscribedTo', // Kitne channels ko subscribe kiya hai user, iska count
         },
         isSubscribed: {
-          if: { $in: [req.user?._id, '$subscribers.subscriber'] }, // Kya user ne iss channel ko subscribe kiya hai?
-          then: true,
-          else: false,
+          $cond: {
+            if: { $in: [req.user?._id, '$subscribers.subscriber'] }, // Kya user ne iss channel ko subscribe kiya hai?
+            then: true,
+            else: false,
+          },
         },
       },
     },
