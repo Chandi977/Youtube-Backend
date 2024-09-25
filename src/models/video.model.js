@@ -5,18 +5,18 @@ import mongooseAggregatePaginate from 'mongoose-aggregate-paginate-v2'; // Impor
 const videoSchema = new Schema(
   {
     videoFile: {
-      type: String, // Field type is String, storing the Cloudinary URL for the video file
+      type: Object, // Field type is String, storing the Cloudinary URL for the video file
       required: true, // This field is required
     },
     thumbnail: {
-      type: String, // Field type is String, storing the Cloudinary URL for the video thumbnail
+      type: Object, // Field type is String, storing the Cloudinary URL for the video thumbnail
       required: true, // This field is required
     },
     title: {
       type: String, // Field type is String, storing the title of the video
       required: true, // This field is required
     },
-    discription: {
+    description: {
       type: String, // Field type is String, storing the description of the video
       required: true, // This field is required
     },

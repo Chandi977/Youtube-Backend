@@ -5,6 +5,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
+// import ffmpeg from 'fluent-ffmpeg';
 
 // Saare videos ko paginate, sort, aur filter ke saath laane ka function
 const getAllVideos = asyncHandler(async (req, res) => {
@@ -48,30 +49,46 @@ const getAllVideos = asyncHandler(async (req, res) => {
 
 // Naya video publish karne ka function
 const publishAVideo = asyncHandler(async (req, res) => {
-  const { title, description } = req.body;
+  const { title, description, duration } = req.body;
 
-  // Agar title, description ya video file nahi hai to error throw karo
-  if (!title || !description || !req.file) {
-    throw new ApiError(400, 'Title, description, and video file are required.');
+  // Access uploaded files from req.files
+  const videoFile = req.files['videoFile'][0]; // Get the first uploaded video file
+  const thumbnail = req.files['thumbnail'][0]; // Get the first uploaded thumbnail file
+
+  try {
+    // Validate required fields
+    if (!title || !description || !videoFile || !thumbnail || !duration) {
+      throw new ApiError(
+        400,
+        'Title, description, video file, thumbnail, and duration are required.'
+      );
+    }
+
+    // Upload video file and thumbnail to Cloudinary
+    const videoFileUrl = await uploadOnCloudinary(videoFile.path); // Use the path to upload
+    const thumbnailUrl = await uploadOnCloudinary(thumbnail.path); // Use the path to upload
+
+    // Create a new video document in the database
+    const newVideo = await Video.create({
+      videoFile: videoFileUrl,
+      thumbnail: thumbnailUrl,
+      title,
+      description,
+      duration, // Use the duration sent from Postman
+      owner: req.user.id,
+    });
+
+    if (!newVideo) {
+      throw new ApiError(500, newVideo, 'Failed to publish video.');
+    }
+
+    return res
+      .status(201)
+      .json(new ApiResponse(201, newVideo, 'Video published successfully.'));
+  } catch (error) {
+    console.error('Error publishing video:', error);
+    return res.status(500).json(new ApiResponse(500, 'Internal Server Error'));
   }
-
-  // Cloudinary pe video upload karo
-  const videoUrl = await uploadOnCloudinary(req.file.path);
-
-  // Naya video object banaye
-  const newVideo = new Video({
-    title,
-    description,
-    videoUrl,
-    owner: req.user._id, // Current user jo video upload kar raha hai
-    createdAt: new Date(), // Current date set karo
-  });
-
-  await newVideo.save(); // Video ko save karo
-
-  return res
-    .status(201)
-    .json(new ApiResponse(201, newVideo, 'Video published successfully.'));
 });
 
 // Video ko ID ke hisaab se fetch karne ka function
