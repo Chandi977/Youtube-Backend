@@ -1,5 +1,8 @@
 import mongoose, { isValidObjectId } from 'mongoose';
 import { Like } from '../models/like.model.js';
+import { Tweet } from '../models/tweet.model.js';
+import { Comment } from '../models/comment.model.js';
+import { Video } from '../models/video.model.js'; // Ensure this line is added
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -7,12 +10,14 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 // Function to toggle like on a video
 const toggleVideoLike = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
+  // console.log(videoId);
 
   try {
     const userId = req.user.id;
 
     // Pehle check karo ke video exist karti hai ya nahi
     const video = await Video.findById(videoId);
+    // console.log(video);
 
     if (!video) {
       throw new ApiError(404, 'Video not found');
@@ -23,7 +28,8 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
 
     // Agar like mila toh dislike kar do
     if (like) {
-      await like.remove();
+      await Like.deleteOne({ _id: like.id });
+      // await like.remove();
       return res
         .status(200)
         .json(new ApiResponse(200, {}, 'Disliked the video.'));
