@@ -113,6 +113,7 @@ const deleteTweet = asyncHandler(async (req, res) => {
   try {
     const { tweetId } = req.body;
     const userId = req.user.id;
+    // console.log(tweetId);
 
     // Tweet ID validate karo
     if (!isValidObjectId(tweetId)) {
@@ -140,7 +141,8 @@ const deleteTweet = asyncHandler(async (req, res) => {
     }
 
     // Tweet delete karo
-    await tweet.remove();
+    await Tweet.deleteOne({ _id: tweetId });
+    // await tweet.remove();
 
     return res
       .status(200)
