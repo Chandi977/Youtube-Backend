@@ -181,8 +181,8 @@ const deletePlaylist = asyncHandler(async (req, res) => {
           new ApiResponse(403, 'Unauthorized to delete this playlist', null)
         );
     }
-
-    await playlist.remove();
+    await Playlist.deleteOne({ _id: playlistId });
+    // await playlist.remove();
     return res
       .status(200)
       .json(new ApiResponse(200, playlist, 'Playlist deleted successfully'));

@@ -7,6 +7,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Channel stats fetch karne ka function (like total views, subscribers, videos, likes, etc.)
+
 const getChannelStats = asyncHandler(async (req, res) => {
   try {
     const userId = req.params.userId; // Channel ka user ID le rahe hain
@@ -18,7 +19,7 @@ const getChannelStats = asyncHandler(async (req, res) => {
     const totalViewsPipeline = [
       {
         $match: {
-          owner: mongoose.Types.ObjectId(userId), // User ID se match karo
+          owner: new mongoose.Types.ObjectId(userId), // User ID se match karo
         },
       },
       {
@@ -37,7 +38,7 @@ const getChannelStats = asyncHandler(async (req, res) => {
     const totalLikesPipeline = [
       {
         $match: {
-          likedBy: mongoose.Types.ObjectId(userId), // User ke likes find karo
+          likedBy: new mongoose.Types.ObjectId(userId), // User ke likes find karo
         },
       },
       {
@@ -81,7 +82,7 @@ const getChannelVideos = asyncHandler(async (req, res) => {
     const pipeline = [
       {
         $match: {
-          owner: mongoose.Types.ObjectId(ownerId), // Owner ke hisaab se videos match karo
+          owner: new mongoose.Types.ObjectId(ownerId), // Owner ke hisaab se videos match karo
         },
       },
       {
