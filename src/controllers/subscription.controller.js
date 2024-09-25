@@ -32,7 +32,7 @@ const toggleSubscription = asyncHandler(async (req, res) => {
 
     // Agar subscription pehle se hai to remove kar do (unsubscribe)
     if (subscription) {
-      await subscription.remove();
+      await Subscription.deleteOne({ _id: subscription._id }); // Correct deletion by subscription ID
       return res
         .status(200)
         .json(
@@ -75,10 +75,11 @@ const toggleSubscription = asyncHandler(async (req, res) => {
 const getUserChannelSubscribers = asyncHandler(async (req, res) => {
   try {
     const { channelId } = req.params;
+    // console.log(channelId, req.params);
 
     // Check karo ki `channelId` valid hai ya nahi
     if (!isValidObjectId(channelId)) {
-      return res.status(400).json(new ApiError(400, 'Invalid channel ID'));
+      return res.status(400).json(new ApiError(400, {}, 'Invalid channel ID'));
     }
 
     // Channel ke saare subscribers ko dhoondo
