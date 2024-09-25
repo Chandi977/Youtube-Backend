@@ -14,7 +14,7 @@ const getVideoComments = asyncHandler(async (req, res) => {
     const pipeline = [
       {
         $match: {
-          video: mongoose.Types.ObjectId(videoId), // Video ke ID ke sath match karo
+          video: new mongoose.Types.ObjectId(videoId), // Video ke ID ke sath match karo
         },
       },
       {
@@ -26,7 +26,7 @@ const getVideoComments = asyncHandler(async (req, res) => {
         $skip: (page - 1) * limit, // Pagination ke liye skip karo
       },
       {
-        $limit: parseInt(limit), // Limit set karo
+        $limit: 10, // Limit set karo
       },
       {
         $lookup: {
@@ -49,8 +49,11 @@ const getVideoComments = asyncHandler(async (req, res) => {
         },
       },
     ];
+    // console.log(pipeline);
 
     const comments = await Comment.aggregate(pipeline); // Aggregate query se comments fetch karo
+    // console.log(videoId, comments, comments.length);
+
     if (!comments.length) {
       throw new ApiError(404, 'No comments found for this video'); // Agar comments nahi hai to error throw karo
     }
@@ -92,7 +95,7 @@ const addComment = asyncHandler(async (req, res) => {
 const updateComment = asyncHandler(async (req, res) => {
   try {
     const { commentId, updateContent } = req.body;
-
+    console.log(commentId, updateContent, req.body);
     // Comment find karo by ID
     const comment = await Comment.findById(commentId);
     if (!comment) {
@@ -117,7 +120,7 @@ const deleteComment = asyncHandler(async (req, res) => {
   try {
     const { commentId } = req.body;
     const userId = req.user._id; // Assuming userId JWT se aa rha hai
-
+    // console.log(userId);
     // Comment find karo by ID
     const comment = await Comment.findById(commentId);
     if (!comment) {
@@ -137,7 +140,7 @@ const deleteComment = asyncHandler(async (req, res) => {
         );
     }
 
-    await comment.remove(); // Comment delete karo
+    await Comment.deleteOne({ _id: commentId }); // Comment delete karo
 
     return res
       .status(200)
