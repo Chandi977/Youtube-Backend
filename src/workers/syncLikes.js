@@ -9,7 +9,7 @@ export async function syncLikes() {
     // 1. Get all videos that have pending like updates
     const dirtyVideos = await redisSMembers('videos:dirty');
     if (!dirtyVideos || dirtyVideos.length === 0) {
-      console.log('No dirty videos to sync.');
+      console.log('No Like videos to sync.');
       return;
     }
 

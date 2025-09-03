@@ -35,6 +35,7 @@ import commentRouter from './routes/comment.routes.js';
 import likeRouter from './routes/like.routes.js';
 import playlistRouter from './routes/playlist.routes.js';
 import dashboardRouter from './routes/dashboard.routes.js';
+import upstashRoutes from './routes/upstash.routes.js';
 // Define routes for the API version 1, using the imported userRouter
 //routes declaration
 app.use('/api/v1/healthcheck', healthcheckRouter);
@@ -46,41 +47,8 @@ app.use('/api/v1/comments', commentRouter);
 app.use('/api/v1/likes', likeRouter);
 app.use('/api/v1/playlist', playlistRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
-
-app.get('/upstash-test', async (req, res) => {
-  try {
-    const base = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    if (!base || !token) {
-      return res
-        .status(500)
-        .json({ ok: false, message: 'Missing UPSTASH env vars' });
-    }
-
-    // 1) Set a key (POST)
-    await fetch(`${base}/set/test_upstash_key/hello_from_render`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    // 2) Get the key (GET)
-    const getRes = await fetch(`${base}/get/test_upstash_key`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const getJson = await getRes.json();
-
-    // 3) Clean up
-    await fetch(`${base}/del/test_upstash_key`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    return res.json({ ok: true, upstashResult: getJson.result ?? getJson });
-  } catch (err) {
-    console.error('Upstash test error:', err);
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
+app.use('/api/v1', upstashRoutes);
+// router.get('/upstash-test', upstashTest);
 
 const SYNC_LIKES_INTERVAL = Number(process.env.SYNC_LIKES_INTERVAL_MS) || 30000;
 setInterval(syncLikes, SYNC_LIKES_INTERVAL);

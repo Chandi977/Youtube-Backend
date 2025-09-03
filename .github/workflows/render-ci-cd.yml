@@ -1,0 +1,36 @@
+name: CI/CD Pipeline – Youtube Backend (Render)
+
+on:
+  push:
+    branches: ['main'] # Trigger only when main branch is updated
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Linter (Optional)
+        run: npm run lint || echo "No lint script found"
+
+      - name: Run Tests (Optional)
+        run: npm test || echo "No tests configured"
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
