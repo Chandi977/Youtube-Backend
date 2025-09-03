@@ -2,7 +2,7 @@ name: CI/CD Pipeline – Youtube Backend (Render)
 
 on:
   push:
-    branches: ['main'] # Trigger only when main branch is updated
+    branches: ['master'] # Trigger only when main branch is updated
 
 jobs:
   build-and-test:
