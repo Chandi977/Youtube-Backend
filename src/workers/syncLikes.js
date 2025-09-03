@@ -27,7 +27,8 @@ export async function syncLikes() {
       }
 
       // (Optional) Reset Redis dirty flag
-      await redisSet('videos:dirty', ''); // Or use SREM in client-based Redis
+      // Remove the processed videoId from the dirty set
+      await redisSRem('videos:dirty', videoId);
     }
   } catch (err) {
     console.error('❌ Error syncing likes:', err.message);

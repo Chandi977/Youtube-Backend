@@ -82,6 +82,7 @@ app.get('/upstash-test', async (req, res) => {
   }
 });
 
-setInterval(syncLikes, 30 * 1000);
+const SYNC_LIKES_INTERVAL = Number(process.env.SYNC_LIKES_INTERVAL_MS) || 30000;
+setInterval(syncLikes, SYNC_LIKES_INTERVAL);
 
 export { app }; // Export the Express app for use in other modules

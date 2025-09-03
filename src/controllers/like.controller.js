@@ -6,7 +6,14 @@ import { Video } from '../models/video.model.js'; // Ensure this line is added
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { redisIncr, redisDecr, redisSAdd, redisGet } from '../utils/upstash.js';
+import {
+  redisIncr,
+  redisDecr,
+  redisSAdd,
+  redisGet,
+  redisDel,
+  redisSet,
+} from '../utils/upstash.js';
 
 // Function to toggle like on a video
 // Toggle like with Redis buffering

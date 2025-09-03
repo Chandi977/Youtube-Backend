@@ -43,3 +43,7 @@ export async function redisSAdd(setKey, member) {
 export async function redisSMembers(setKey) {
   return callRedis('smembers', setKey);
 }
+
+export async function redisDel(key) {
+  return callRedis('del', key);
+}
