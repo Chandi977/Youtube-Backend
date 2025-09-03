@@ -2,7 +2,7 @@
 import dotenv from 'dotenv';
 
 // Import the function to connect to the MongoDB database
-import connectDB from './db/index.js';
+import connectDB from './config/index.js';
 
 // Import the Express app configuration
 import { app } from './app.js';

@@ -1,6 +1,7 @@
 import express from 'express'; // Import Express framework
 import cors from 'cors'; // Import CORS middleware
 import cookieParser from 'cookie-parser'; // Import Cookie parser middleware
+import { syncLikes } from './workers/syncLikes.js';
 
 const app = express(); // Create an instance of Express
 
@@ -45,5 +46,42 @@ app.use('/api/v1/comments', commentRouter);
 app.use('/api/v1/likes', likeRouter);
 app.use('/api/v1/playlist', playlistRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
+
+app.get('/upstash-test', async (req, res) => {
+  try {
+    const base = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (!base || !token) {
+      return res
+        .status(500)
+        .json({ ok: false, message: 'Missing UPSTASH env vars' });
+    }
+
+    // 1) Set a key (POST)
+    await fetch(`${base}/set/test_upstash_key/hello_from_render`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    // 2) Get the key (GET)
+    const getRes = await fetch(`${base}/get/test_upstash_key`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const getJson = await getRes.json();
+
+    // 3) Clean up
+    await fetch(`${base}/del/test_upstash_key`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    return res.json({ ok: true, upstashResult: getJson.result ?? getJson });
+  } catch (err) {
+    console.error('Upstash test error:', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+setInterval(syncLikes, 30 * 1000);
 
 export { app }; // Export the Express app for use in other modules

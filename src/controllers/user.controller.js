@@ -510,7 +510,11 @@ const getWatchHistory = asyncHandler(async (req, res) => {
   ]);
   console.log(user);
   // Agar user nahi mila ya uski watch history empty hai, toh error throw karna
-  if (!user.length || !user[0].watchHistory.length) {
+  if (!user.length) {
+    throw new ApiError(404, 'User not found.');
+  }
+
+  if (!user[0].watchHistory.length) {
     throw new ApiError(404, 'No watch history found for this user.');
   }
 

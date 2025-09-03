@@ -1,1033 +1,866 @@
 {
-	"info": {
-		"_postman_id": "42606f1e-e58f-4a0c-816f-6d62273974cd",
-		"name": "Youtube-Backend",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "17825461"
-	},
-	"item": [
-		{
-			"name": "user",
-			"item": [
-				{
-					"name": "register",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "fullName",
-									"value": "Chandi",
-									"type": "text"
-								},
-								{
-									"key": "email",
-									"value": "chandi@gmail.com",
-									"type": "text"
-								},
-								{
-									"key": "password",
-									"value": "Chandi977",
-									"type": "text"
-								},
-								{
-									"key": "username",
-									"value": "chandi",
-									"type": "text"
-								},
-								{
-									"key": "avatar",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/chennai.png"
-								},
-								{
-									"key": "coverImage",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/kd.jpg"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{server}}users/register",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"register"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "login",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"email\":\"chandi@example.com\",\r\n    \"password\":\"Pappu977\"\r\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}users/login",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"login"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "logout",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{server}}users/logout",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"logout"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "refreshAccessToken",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2NmVkMzI3YWU1ZWFjNDcyZDcwOTUyZTYiLCJpYXQiOjE3MjcwNzc4MjMsImV4cCI6MTcyNzk0MTgyM30.DkaNJaDh2sPanEpWbeM7Xf_E1mKB-KES5xFd0AWo8Nk\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}users/refresh-token",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"refresh-token"
-							],
-							"query": [
-								{
-									"key": "accessToken",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2NmVkMzI3YWU1ZWFjNDcyZDcwOTUyZTYiLCJpYXQiOjE3MjcwNzcyMjgsImV4cCI6MTcyNzk0MTIyOH0.9zLta4halbFOI-Epae6D93m5fpZi_0IluIwTZSJI1EQ",
-									"disabled": true
-								}
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "changePassword",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"oldPassword\": \"Chandi977\",\r\n  \"newPassword\": \"Pappu977\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}users/changePassword",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"changePassword"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "currentUser",
-					"protocolProfileBehavior": {
-						"disableBodyPruning": true
-					},
-					"request": {
-						"method": "GET",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}users/current-user",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"current-user"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateDetails",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"fullName\": \"Chandi Charan\",\r\n  \"email\": \"chandi@example.com\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}users/update-account?fullName",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"update-account"
-							],
-							"query": [
-								{
-									"key": "fullName",
-									"value": null
-								}
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateAvatar",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "avatar",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/project.webp"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{server}}users/update-avatar",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"update-avatar"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateCoverImage",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "coverImage",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/shakuni'.png"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{server}}users/update-coverImage",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"update-coverImage"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "ChannelProfile",
-					"protocolProfileBehavior": {
-						"disableBodyPruning": true
-					},
-					"request": {
-						"method": "GET",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": []
-						},
-						"url": {
-							"raw": "{{server}}users/channel/chandi",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"channel",
-								"chandi"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "WatchHistory",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}users/history",
-							"host": [
-								"{{server}}users"
-							],
-							"path": [
-								"history"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "comment",
-			"item": [
-				{
-					"name": "GetVideoComments",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}comments/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}comments"
-							],
-							"path": [
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "AddComments",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"content\": \"This is a comment.\",\r\n  \"video\": \"66f3fd279a2e970ebbde9e1a\",\r\n  \"owner\": \"66ed327ae5eac472d70952e6\"\r\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}comments/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}comments"
-							],
-							"path": [
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateComment",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"commentId\": \"66f40194798ba45de0d303b4\",\r\n  \"updateContent\": \"This is the updated comment.\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}comments/c/66f40194798ba45de0d303b4",
-							"host": [
-								"{{server}}comments"
-							],
-							"path": [
-								"c",
-								"66f40194798ba45de0d303b4"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "DeleteComment",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"commentId\" : \"66f405a397f04dc50a92a5d9\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}comments/c/66f405a397f04dc50a92a5d9",
-							"host": [
-								"{{server}}comments"
-							],
-							"path": [
-								"c",
-								"66f405a397f04dc50a92a5d9"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "dasboard",
-			"item": [
-				{
-					"name": "ChannelStats",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}dashboard/stats",
-							"host": [
-								"{{server}}dashboard"
-							],
-							"path": [
-								"stats"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "ChannelVideos",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}dashboard/videos",
-							"host": [
-								"{{server}}dashboard"
-							],
-							"path": [
-								"videos"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "healthcheck",
-			"item": [
-				{
-					"name": "CheckBackend",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}healthcheck",
-							"host": [
-								"{{server}}healthcheck"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "playlist",
-			"item": [
-				{
-					"name": "CreatePlaylist",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"name\": \"My New Playlist\",\r\n  \"description\": \"This is a description of my playlist.\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}playlist",
-							"host": [
-								"{{server}}playlist"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetUserPlaylist",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}playlist/user/66ed327ae5eac472d70952e6",
-							"host": [
-								"{{server}}playlist"
-							],
-							"path": [
-								"user",
-								"66ed327ae5eac472d70952e6"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "getPlaylistById",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}playlist/66f421350537ffa349078fd9",
-							"host": [
-								"{{server}}playlist"
-							],
-							"path": [
-								"66f421350537ffa349078fd9"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdatePlaylist",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n  \"name\": \"Updated Playlist Name\",\r\n  \"description\": \"Updated description.\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}playlist/66f421350537ffa349078fd9",
-							"host": [
-								"{{server}}playlist"
-							],
-							"path": [
-								"66f421350537ffa349078fd9"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "DeletePlaylist",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{server}}playlist/66f421350537ffa349078fd9",
-							"host": [
-								"{{server}}playlist"
-							],
-							"path": [
-								"66f421350537ffa349078fd9"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "AddVideoToPlaylist",
-					"request": {
-						"method": "GET",
-						"header": []
-					},
-					"response": []
-				},
-				{
-					"name": "DeleteVideoFromPlaylist",
-					"request": {
-						"method": "GET",
-						"header": []
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "subscription",
-			"item": [
-				{
-					"name": "Toggle Subsription",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{server}}subscriptions/c/66ed327ae5eac472d70952e6",
-							"host": [
-								"{{server}}subscriptions"
-							],
-							"path": [
-								"c",
-								"66ed327ae5eac472d70952e6"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetChannelSubscribers",
-					"protocolProfileBehavior": {
-						"disableBodyPruning": true
-					},
-					"request": {
-						"method": "GET",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"channelId\" : \"66ed327ae5eac472d70952e6\"\r\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}subscriptions/u/66ed327ae5eac472d70952e6",
-							"host": [
-								"{{server}}subscriptions"
-							],
-							"path": [
-								"u",
-								"66ed327ae5eac472d70952e6"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetSubscribedChannel",
-					"request": {
-						"method": "GET",
-						"header": []
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "tweet",
-			"item": [
-				{
-					"name": "CreateTweet",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"content\": \"This is a test tweet!\",\r\n    \"owner\": \"66ed327ae5eac472d70952e6\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}tweets/",
-							"host": [
-								"{{server}}tweets"
-							],
-							"path": [
-								""
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetUserTweets",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}tweets/user/66ed327ae5eac472d70952e6",
-							"host": [
-								"{{server}}tweets"
-							],
-							"path": [
-								"user",
-								"66ed327ae5eac472d70952e6"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateTweet",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"tweetId\": \"66f428a5f1ec44340a71d46d\",\r\n    \"updateContent\": \"This tweet has been updated.\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}tweets/66f428a5f1ec44340a71d46d",
-							"host": [
-								"{{server}}tweets"
-							],
-							"path": [
-								"66f428a5f1ec44340a71d46d"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "DeleteTweet",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\r\n    \"tweetId\": \"66f428a5f1ec44340a71d46d\"\r\n}\r\n",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}tweets/66f428a5f1ec44340a71d46d",
-							"host": [
-								"{{server}}tweets"
-							],
-							"path": [
-								"66f428a5f1ec44340a71d46d"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "video",
-			"item": [
-				{
-					"name": "AllVideos",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}videos/",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								""
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "publishVideo",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "title",
-									"value": "test",
-									"type": "text"
-								},
-								{
-									"key": "description",
-									"value": "First video test",
-									"type": "text"
-								},
-								{
-									"key": "duration",
-									"value": "120",
-									"type": "text"
-								},
-								{
-									"key": "videoFile",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20240911_16_14_20_Pro.mp4"
-								},
-								{
-									"key": "thumbnail",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20220220_19_49_47_Pro.jpg"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{server}}videos/?title&description",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								""
-							],
-							"query": [
-								{
-									"key": "title",
-									"value": null
-								},
-								{
-									"key": "description",
-									"value": null
-								}
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetVideoById",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}videos/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "UpdateVideo",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "title",
-									"value": "Updated video title",
-									"type": "text"
-								},
-								{
-									"key": "description",
-									"value": "Updated description of the video",
-									"type": "text"
-								},
-								{
-									"key": "videoFile",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20240911_16_15_41_Pro.mp4"
-								},
-								{
-									"key": "thumbnail",
-									"type": "file",
-									"src": "/C:/Users/pappu/OneDrive/Pictures/cake.jpg",
-									"disabled": true
-								}
-							]
-						},
-						"url": {
-							"raw": "{{server}}videos/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "DeleteAVideo",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{server}}videos/66f3f564d309503af5537fc5",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								"66f3f564d309503af5537fc5"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "TogglePublishStatus",
-					"request": {
-						"method": "PATCH",
-						"header": [],
-						"url": {
-							"raw": "{{server}}videos/toggle/publish/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}videos"
-							],
-							"path": [
-								"toggle",
-								"publish",
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "like",
-			"item": [
-				{
-					"name": "AddLikeToVideo",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{server}}likes/toggle/v/66f3fd279a2e970ebbde9e1a",
-							"host": [
-								"{{server}}likes"
-							],
-							"path": [
-								"toggle",
-								"v",
-								"66f3fd279a2e970ebbde9e1a"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "toggleLikeOnComment",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{server}}likes/toggle/c/66f401648772d0d28063b173",
-							"host": [
-								"{{server}}likes"
-							],
-							"path": [
-								"toggle",
-								"c",
-								"66f401648772d0d28063b173"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "toggleTweetLike",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{server}}likes/toggle/t/66f428a5f1ec44340a71d46d",
-							"host": [
-								"{{server}}likes"
-							],
-							"path": [
-								"toggle",
-								"t",
-								"66f428a5f1ec44340a71d46d"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "GetLikedVideos",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{server}}likes/videos",
-							"host": [
-								"{{server}}likes"
-							],
-							"path": [
-								"videos"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		}
-	]
+  "info": {
+    "_postman_id": "42606f1e-e58f-4a0c-816f-6d62273974cd",
+    "name": "Youtube-Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "17825461"
+  },
+  "item": [
+    {
+      "name": "user",
+      "item": [
+        {
+          "name": "register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "fullName",
+                  "value": "Chandi",
+                  "type": "text"
+                },
+                {
+                  "key": "email",
+                  "value": "chandi@gmail.com",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "jgafhakfbkjabskjdas",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "chandi",
+                  "type": "text"
+                },
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/chennai.png"
+                },
+                {
+                  "key": "coverImage",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/kd.jpg"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{server}}users/register",
+              "host": ["{{server}}users"],
+              "path": ["register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"email\":\"chandi@example.com\",\r\n    \"password\":\"Pappu977\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}users/login",
+              "host": ["{{server}}users"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{server}}users/logout",
+              "host": ["{{server}}users"],
+              "path": ["logout"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "refreshAccessToken",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2NmVkMzI3YWU1ZWFjNDcyZDcwOTUyZTYiLCJpYXQiOjE3MjcwNzc4MjMsImV4cCI6MTcyNzk0MTgyM30.DkaNJaDh2sPanEpWbeM7Xf_E1mKB-KES5xFd0AWo8Nk\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}users/refresh-token",
+              "host": ["{{server}}users"],
+              "path": ["refresh-token"],
+              "query": [
+                {
+                  "key": "accessToken",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2NmVkMzI3YWU1ZWFjNDcyZDcwOTUyZTYiLCJpYXQiOjE3MjcwNzcyMjgsImV4cCI6MTcyNzk0MTIyOH0.9zLta4halbFOI-Epae6D93m5fpZi_0IluIwTZSJI1EQ",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "changePassword",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"oldPassword\": \"Chandi977\",\r\n  \"newPassword\": \"Pappu977\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}users/changePassword",
+              "host": ["{{server}}users"],
+              "path": ["changePassword"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "currentUser",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}users/current-user",
+              "host": ["{{server}}users"],
+              "path": ["current-user"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateDetails",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"fullName\": \"Chandi Charan\",\r\n  \"email\": \"chandi@example.com\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}users/update-account?fullName",
+              "host": ["{{server}}users"],
+              "path": ["update-account"],
+              "query": [
+                {
+                  "key": "fullName",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateAvatar",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "avatar",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/project.webp"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{server}}users/update-avatar",
+              "host": ["{{server}}users"],
+              "path": ["update-avatar"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateCoverImage",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "coverImage",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/shakuni'.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{server}}users/update-coverImage",
+              "host": ["{{server}}users"],
+              "path": ["update-coverImage"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "ChannelProfile",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": []
+            },
+            "url": {
+              "raw": "{{server}}users/channel/chandi",
+              "host": ["{{server}}users"],
+              "path": ["channel", "chandi"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "WatchHistory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}users/history",
+              "host": ["{{server}}users"],
+              "path": ["history"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "comment",
+      "item": [
+        {
+          "name": "GetVideoComments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}comments/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}comments"],
+              "path": ["66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AddComments",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"content\": \"This is a comment.\",\r\n  \"video\": \"66f3fd279a2e970ebbde9e1a\",\r\n  \"owner\": \"66ed327ae5eac472d70952e6\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}comments/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}comments"],
+              "path": ["66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateComment",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"commentId\": \"66f40194798ba45de0d303b4\",\r\n  \"updateContent\": \"This is the updated comment.\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}comments/c/66f40194798ba45de0d303b4",
+              "host": ["{{server}}comments"],
+              "path": ["c", "66f40194798ba45de0d303b4"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DeleteComment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"commentId\" : \"66f405a397f04dc50a92a5d9\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}comments/c/66f405a397f04dc50a92a5d9",
+              "host": ["{{server}}comments"],
+              "path": ["c", "66f405a397f04dc50a92a5d9"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "dasboard",
+      "item": [
+        {
+          "name": "ChannelStats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}dashboard/stats",
+              "host": ["{{server}}dashboard"],
+              "path": ["stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "ChannelVideos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}dashboard/videos",
+              "host": ["{{server}}dashboard"],
+              "path": ["videos"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "healthcheck",
+      "item": [
+        {
+          "name": "CheckBackend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}healthcheck",
+              "host": ["{{server}}healthcheck"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "playlist",
+      "item": [
+        {
+          "name": "CreatePlaylist",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"My New Playlist\",\r\n  \"description\": \"This is a description of my playlist.\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}playlist",
+              "host": ["{{server}}playlist"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetUserPlaylist",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}playlist/user/66ed327ae5eac472d70952e6",
+              "host": ["{{server}}playlist"],
+              "path": ["user", "66ed327ae5eac472d70952e6"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "getPlaylistById",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}playlist/66f421350537ffa349078fd9",
+              "host": ["{{server}}playlist"],
+              "path": ["66f421350537ffa349078fd9"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdatePlaylist",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"Updated Playlist Name\",\r\n  \"description\": \"Updated description.\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}playlist/66f421350537ffa349078fd9",
+              "host": ["{{server}}playlist"],
+              "path": ["66f421350537ffa349078fd9"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DeletePlaylist",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{server}}playlist/66f421350537ffa349078fd9",
+              "host": ["{{server}}playlist"],
+              "path": ["66f421350537ffa349078fd9"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "AddVideoToPlaylist",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        },
+        {
+          "name": "DeleteVideoFromPlaylist",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "subscription",
+      "item": [
+        {
+          "name": "Toggle Subsription",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{server}}subscriptions/c/66ed327ae5eac472d70952e6",
+              "host": ["{{server}}subscriptions"],
+              "path": ["c", "66ed327ae5eac472d70952e6"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetChannelSubscribers",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"channelId\" : \"66ed327ae5eac472d70952e6\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}subscriptions/u/66ed327ae5eac472d70952e6",
+              "host": ["{{server}}subscriptions"],
+              "path": ["u", "66ed327ae5eac472d70952e6"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetSubscribedChannel",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "tweet",
+      "item": [
+        {
+          "name": "CreateTweet",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"content\": \"This is a test tweet!\",\r\n    \"owner\": \"66ed327ae5eac472d70952e6\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}tweets/",
+              "host": ["{{server}}tweets"],
+              "path": [""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetUserTweets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}tweets/user/66ed327ae5eac472d70952e6",
+              "host": ["{{server}}tweets"],
+              "path": ["user", "66ed327ae5eac472d70952e6"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateTweet",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"tweetId\": \"66f428a5f1ec44340a71d46d\",\r\n    \"updateContent\": \"This tweet has been updated.\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}tweets/66f428a5f1ec44340a71d46d",
+              "host": ["{{server}}tweets"],
+              "path": ["66f428a5f1ec44340a71d46d"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DeleteTweet",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"tweetId\": \"66f428a5f1ec44340a71d46d\"\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}tweets/66f428a5f1ec44340a71d46d",
+              "host": ["{{server}}tweets"],
+              "path": ["66f428a5f1ec44340a71d46d"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "video",
+      "item": [
+        {
+          "name": "AllVideos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}videos/",
+              "host": ["{{server}}videos"],
+              "path": [""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "publishVideo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "test",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "First video test",
+                  "type": "text"
+                },
+                {
+                  "key": "duration",
+                  "value": "120",
+                  "type": "text"
+                },
+                {
+                  "key": "videoFile",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20240911_16_14_20_Pro.mp4"
+                },
+                {
+                  "key": "thumbnail",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20220220_19_49_47_Pro.jpg"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{server}}videos/?title&description",
+              "host": ["{{server}}videos"],
+              "path": [""],
+              "query": [
+                {
+                  "key": "title",
+                  "value": null
+                },
+                {
+                  "key": "description",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetVideoById",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}videos/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}videos"],
+              "path": ["66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateVideo",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "Updated video title",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Updated description of the video",
+                  "type": "text"
+                },
+                {
+                  "key": "videoFile",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/Camera Roll/WIN_20240911_16_15_41_Pro.mp4"
+                },
+                {
+                  "key": "thumbnail",
+                  "type": "file",
+                  "src": "/C:/Users/pappu/OneDrive/Pictures/cake.jpg",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{server}}videos/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}videos"],
+              "path": ["66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DeleteAVideo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{server}}videos/66f3f564d309503af5537fc5",
+              "host": ["{{server}}videos"],
+              "path": ["66f3f564d309503af5537fc5"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TogglePublishStatus",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{server}}videos/toggle/publish/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}videos"],
+              "path": ["toggle", "publish", "66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "like",
+      "item": [
+        {
+          "name": "AddLikeToVideo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{server}}likes/toggle/v/66f3fd279a2e970ebbde9e1a",
+              "host": ["{{server}}likes"],
+              "path": ["toggle", "v", "66f3fd279a2e970ebbde9e1a"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "toggleLikeOnComment",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{server}}likes/toggle/c/66f401648772d0d28063b173",
+              "host": ["{{server}}likes"],
+              "path": ["toggle", "c", "66f401648772d0d28063b173"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "toggleTweetLike",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{server}}likes/toggle/t/66f428a5f1ec44340a71d46d",
+              "host": ["{{server}}likes"],
+              "path": ["toggle", "t", "66f428a5f1ec44340a71d46d"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GetLikedVideos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{server}}likes/videos",
+              "host": ["{{server}}likes"],
+              "path": ["videos"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
 }

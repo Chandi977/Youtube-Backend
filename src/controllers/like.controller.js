@@ -6,48 +6,44 @@ import { Video } from '../models/video.model.js'; // Ensure this line is added
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { redisIncr, redisDecr, redisSAdd, redisGet } from '../utils/upstash.js';
 
 // Function to toggle like on a video
+// Toggle like with Redis buffering
 const toggleVideoLike = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
-  // console.log(videoId);
+  const userId = req.user.id;
 
-  try {
-    const userId = req.user.id;
+  // Ensure video exists (lightweight check)
+  const videoExists = await Video.exists({ _id: videoId });
+  if (!videoExists) {
+    throw new ApiError(404, 'Video not found');
+  }
 
-    // Pehle check karo ke video exist karti hai ya nahi
-    const video = await Video.findById(videoId);
-    // console.log(video);
+  const likeKey = `video:${videoId}:likes`; // counter
+  const userKey = `video:${videoId}:user:${userId}`; // track if user already liked
 
-    if (!video) {
-      throw new ApiError(404, 'Video not found');
-    }
+  // Check in Redis first
+  const hasLiked = await redisGet(userKey);
 
-    // Check if user has already liked the video
-    const like = await Like.findOne({ video: videoId, likedBy: userId });
+  if (hasLiked) {
+    // === DISLIKE ===
+    await redisDecr(likeKey); // decrement counter
+    await redisDel(userKey); // remove user like marker
+    await redisSAdd('videos:dirty', videoId); // mark video for sync later
 
-    // Agar like mila toh dislike kar do
-    if (like) {
-      await Like.deleteOne({ _id: like.id });
-      // await like.remove();
-      return res
-        .status(200)
-        .json(new ApiResponse(200, {}, 'Disliked the video.'));
-    }
-    // Agar like nahi mila toh like kar do
-    else {
-      await Like.create({
-        video: videoId,
-        likedBy: userId,
-      });
+    return res
+      .status(200)
+      .json(new ApiResponse(200, {}, 'Disliked the video (buffered).'));
+  } else {
+    // === LIKE ===
+    await redisIncr(likeKey); // increment counter
+    await redisSet(userKey, '1'); // mark user as liked
+    await redisSAdd('videos:dirty', videoId); // mark video dirty for sync
 
-      return res
-        .status(201)
-        .json(new ApiResponse(201, {}, 'Liked video successfully.'));
-    }
-  } catch (error) {
-    console.error('Error toggling like on video:', error);
-    return res.status(500).json(new ApiError(500, 'Internal Server Error'));
+    return res
+      .status(201)
+      .json(new ApiResponse(201, {}, 'Liked video successfully (buffered).'));
   }
 });
 
