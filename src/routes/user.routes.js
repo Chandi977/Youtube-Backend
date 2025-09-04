@@ -1,7 +1,7 @@
-import { Router } from 'express'; // Importing the Router module from express to create modular, mountable route handlers.
+import { Router } from 'express';
 import {
-  loginUser,
   registerUser,
+  loginUser,
   logoutUser,
   refreshAccessToken,
   changeCurrentPassword,
@@ -11,61 +11,79 @@ import {
   updateUserCoverImage,
   getUserChannelProfile,
   getWatchHistory,
-} from '../controllers/user.controller.js'; // Importing controller functions for user-related actions.
-import { upload } from '../middlewares/multer.middleware.js'; // Importing middleware for handling file uploads (Multer).
-import { verifyJWT } from '../middlewares/auth.middleware.js'; // Importing middleware to verify JSON Web Tokens (JWT).
+  getFeed,
+  recommendedVideos,
+  recommendChannels,
+  getLikedVideos,
+  getHistory,
+} from '../controllers/user.controller.js';
+import { upload } from '../middlewares/multer.middleware.js';
+import { verifyJWT } from '../middlewares/auth.middleware.js';
 
-const router = Router(); // Creating a new Router instance to handle routes.
+const router = Router();
 
-// Route to handle user registration
-// This route expects avatar and coverImage fields for file uploads
-router.route('/register').post(
+// -------------------- PUBLIC ROUTES --------------------
+
+// Register user with avatar and optional cover image
+router.post(
+  '/register',
   upload.fields([
-    {
-      name: 'avatar', // Expecting an avatar file upload with maxCount set to 1.
-      maxCount: 1,
-    },
-    {
-      name: 'coverImage', // Expecting a coverImage file upload with maxCount set to 1.
-      maxCount: 1,
-    },
+    { name: 'avatar', maxCount: 1 },
+    { name: 'coverImage', maxCount: 1 },
   ]),
-  registerUser // Controller function to handle the user registration logic.
+  registerUser
 );
 
-// Route to handle user login
-router.route('/login').post(loginUser); // Controller function to handle user login logic.
+// User login
+router.post('/login', loginUser);
 
-// Secured Route for logout
-// The user needs to be authenticated with JWT to access this route
-router.route('/logout').post(verifyJWT, logoutUser); // Controller function to handle logout, with JWT verification for security.
+// Refresh access token
+router.post('/refresh-token', refreshAccessToken);
 
-// Route to refresh access token
-router.route('/refresh-token').post(refreshAccessToken); // Controller function to refresh the user's access token.
+// -------------------- PROTECTED ROUTES --------------------
+router.use(verifyJWT); // All routes below require authentication
 
-// Route to change the current password
-router.route('/changePassword').post(verifyJWT, changeCurrentPassword); // User must be authenticated to change their password.
+// Logout user
+router.post('/logout', logoutUser);
 
-// Route to get the current user's details
-router.route('/current-user').get(verifyJWT, getCurrentUser); // Fetches details of the currently authenticated user.
+// Get current user details
+router.get('/me', getCurrentUser);
 
-// Route to update account details
-router.route('/update-account').post(verifyJWT, updateAcccountDetails); // User must be authenticated to update their account details.
+// Change current password
+router.patch('/change-password', changeCurrentPassword);
 
-// Route to update user avatar
-router
-  .route('/update-avatar')
-  .patch(verifyJWT, upload.single('avatar'), updateUserAvatar); // User must be authenticated to update their avatar image.
+// Update account details
+router.patch('/update-account', updateAcccountDetails);
 
-// Route to update user cover image
-router
-  .route('/update-coverImage')
-  .patch(verifyJWT, upload.single('coverImage'), updateUserCoverImage); // User must be authenticated to update their cover image.
+// Update avatar
+router.patch('/update-avatar', upload.single('avatar'), updateUserAvatar);
 
-// Route to get user channel profile by username
-router.route('/channel/:username').get(verifyJWT, getUserChannelProfile); // User must be authenticated to fetch the channel profile of another user by username.
+// Update cover image
+router.patch(
+  '/update-cover',
+  upload.single('coverImage'),
+  updateUserCoverImage
+);
 
-// Route to get watch history of the user
-router.route('/history').get(verifyJWT, getWatchHistory); // User must be authenticated to access their watch history.
+// Get user channel profile by username
+router.get('/channel/:username', getUserChannelProfile);
 
-export default router; // Exporting the router to use it in other parts of the application.
+// Watch history
+router.get('/watch-history', getWatchHistory); // Changed from /history
+
+// Get feed from subscriptions
+router.get('/feed', getFeed);
+
+// Recommended videos
+router.get('/recommended-videos', recommendedVideos);
+
+// Recommended channels
+router.get('/recommended-channels', recommendChannels);
+
+// Liked videos
+router.get('/liked-videos', getLikedVideos);
+
+// Video history (views)
+router.get('/history', getHistory);
+
+export default router;

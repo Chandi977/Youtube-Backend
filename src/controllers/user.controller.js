@@ -1,11 +1,12 @@
-import { asyncHandler } from '../utils/asyncHandler.js'; // Async error handling ke liye import
-import { ApiError } from '../utils/ApiError.js'; // Custom error handling ke liye import
-import { User } from '../models/user.model.js'; // MongoDB user model ke liye import
-import { uploadOnCloudinary } from '../utils/cloudinary.js'; // Cloudinary pe images upload karne ka utility
-import { ApiResponse } from '../utils/ApiResponse.js'; // Standard API response wrapper ke liye import
-import jwt from 'jsonwebtoken'; // JWT (JSON Web Token) ke liye import
-import cloudinary from 'cloudinary';
 import mongoose from 'mongoose';
+import { User } from '../models/user.model.js';
+import { Video } from '../models/video.model.js';
+import { View } from '../models/view.model.js';
+import { Like } from '../models/like.model.js';
+import { ApiError } from '../utils/ApiError.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+
 // Function jo user ke liye access aur refresh tokens generate karega
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -387,46 +388,45 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 
 const getUserChannelProfile = asyncHandler(async (req, res) => {
   const { username } = req.params;
+  const userId = req.user?._id;
 
-  // Agar username nahi diya gaya ya empty string hai, toh error throw karo
   if (!username?.trim()) {
-    throw new ApiError(400, 'Username is missing in getUserChannelProfile');
+    throw new ApiError(400, 'Username is required');
   }
 
-  // User channel profile ko aggregate pipeline ke through fetch karna
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized request');
+  }
+
   const channel = await User.aggregate([
     {
       $match: {
-        username: username?.toLowerCase(), // Username ko lowercase mein match karna
+        username: username.toLowerCase(),
       },
     },
     {
       $lookup: {
-        from: 'subscriptions', // Subscriptions collection se data lana
+        from: 'subscriptions',
         localField: '_id',
-        foreignField: 'channel', // Channel field ko user _id se match karna
-        as: 'subscribers', // Subscribers ke data ko 'subscribers' field mein rakhna
+        foreignField: 'channel',
+        as: 'subscribers',
       },
     },
     {
       $lookup: {
-        from: 'subscriptions', // Doosri baar subscriptions collection ko use karna
+        from: 'subscriptions',
         localField: '_id',
-        foreignField: 'subscriber', // Jo user hai, unke subscribed channels fetch karna
-        as: 'subscribedTo', // Subscribed channels ka data 'subscribedTo' field mein
+        foreignField: 'subscriber',
+        as: 'subscribedTo',
       },
     },
     {
       $addFields: {
-        subscriberCount: {
-          $size: '$subscribers', // Subscribers ka count nikalna
-        },
-        channelsSubscribedTo: {
-          $size: '$subscribedTo', // Kitne channels ko subscribe kiya hai user, iska count
-        },
+        subscribersCount: { $size: '$subscribers' },
+        channelsSubscribedToCount: { $size: '$subscribedTo' },
         isSubscribed: {
           $cond: {
-            if: { $in: [req.user?._id, '$subscribers.subscriber'] }, // Kya user ne iss channel ko subscribe kiya hai?
+            if: { $in: [userId, '$subscribers.subscriber'] },
             then: true,
             else: false,
           },
@@ -435,97 +435,276 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
     },
     {
       $project: {
-        fullName: 1,
-        email: 1,
-        username: 1,
-        avatar: 1,
-        coverImage: 1,
-        subscriberCount: 1, // Jo data return karna hai, usko select karna
-        channelsSubscribedTo: 1,
-        isSubscribed: 1,
+        password: 0,
+        refreshToken: 0,
       },
     },
   ]);
 
-  console.log(channel); // Debugging ke liye channel data ko console mein print karna
-
-  // Agar channel nahi mila to error throw karna
-  if (!channel || channel.length === 0) {
-    throw new ApiError(404, 'Channel not found on getUserChannelProfile');
+  if (!channel?.length) {
+    throw new ApiError(404, 'Channel not found');
   }
 
-  // Agar sab theek hai, to user profile ka response send karna
-  return res.status(200).json(
-    new ApiResponse(
-      200,
-      channel[0], // Pehla result return karna
-      'User channel profile successfully fetched'
-    )
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, channel[0], 'Channel details fetched successfully')
+    );
 });
 
 const getWatchHistory = asyncHandler(async (req, res) => {
-  // User ke watch history ko aggregate pipeline ke through fetch karna
-  console.log('User ID:', req.user._id);
-  const user = await User.aggregate([
+  const user = await User.findById(req.user._id).populate({
+    path: 'watchHistory',
+    populate: {
+      path: 'owner',
+      select: 'fullName username avatar',
+    },
+  });
+
+  if (!user || !user.watchHistory.length) {
+    throw new ApiError(404, 'No watch history found for this user.');
+  }
+
+  // Get video views using aggregation
+  const videoIds = user.watchHistory.map((video) => video._id);
+  const videoViews = await Video.aggregate([
     {
       $match: {
-        _id: new mongoose.Types.ObjectId(req.user._id), // User ko match karna uske _id se
+        _id: { $in: videoIds },
       },
     },
     {
       $lookup: {
-        from: 'videos', // Videos collection se data lana
-        localField: 'watchHistory', // User ke watchHistory field ko video _id se match karna
-        foreignField: '_id', // Videos collection mein video _id ko match karna
-        as: 'watchHistory', // Fetched videos ka data 'watchHistory' field mein rakhna
-        pipeline: [
-          {
-            $lookup: {
-              from: 'users', // Video ke owner ka data lana users collection se
-              localField: 'owner', // Video ke owner _id ko match karna
-              foreignField: '_id', // Owner ka _id match karna
-              as: 'owner', // Owner data ko 'owner' field mein rakhna
-              pipeline: [
-                {
-                  $project: {
-                    fullName: 1, // Owner ke fullName ko project karna
-                    username: 1, // Owner ke username ko project karna
-                    avatar: 1, // Owner ke avatar ko project karna
-                  },
-                },
-              ],
-            },
-          },
-          {
-            $addFields: {
-              owner: {
-                $first: '$owner', // Owner ka pehla element 'owner' field mein daalna
-              },
-            },
-          },
-        ],
+        from: 'likes',
+        localField: '_id',
+        foreignField: 'video',
+        as: 'likes',
+      },
+    },
+    {
+      $addFields: {
+        likesCount: { $size: '$likes' },
       },
     },
   ]);
-  console.log(user);
-  // Agar user nahi mila ya uski watch history empty hai, toh error throw karna
-  if (!user.length) {
-    throw new ApiError(404, 'User not found.');
-  }
 
-  if (!user[0].watchHistory.length) {
-    throw new ApiError(404, 'No watch history found for this user.');
-  }
+  // Combine watch history with views
+  const watchHistory = user.watchHistory.map((video) => {
+    const videoWithViews = videoViews.find((v) => v._id.equals(video._id));
+    return {
+      ...video.toObject(),
+      likesCount: videoWithViews?.likesCount || 0,
+    };
+  });
 
-  // Watch history ko successfully fetch kar ke return karna
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, watchHistory, 'Watch history fetched successfully.')
+    );
+});
+
+const getFeed = asyncHandler(async (req, res, next) => {
+  const subscribedTo = await subscriptions.findAll({
+    where: { subscriber: req.user.id },
+  });
+
+  const subscriptions = subscribedTo.map((sub) => sub.subscribeTo);
+
+  const feed = await Video.findAll({
+    include: { model: User, attributes: ['id', 'avatar', 'username'] },
+    where: { userId: { [Op.in]: subscriptions } },
+    order: [['createdAt', 'DESC']],
+  });
+
+  // Add views for each video
+  const feedWithViews = await Promise.all(
+    feed.map(async (video) => {
+      const views = await View.count({ where: { videoId: video.id } });
+      video.setDataValue('views', views);
+      return video;
+    })
+  );
+
+  return res.status(200).json({ success: true, data: feedWithViews });
+});
+
+const recommendedVideos = asyncHandler(async (req, res, next) => {
+  const videos = await Video.findAll({
+    attributes: [
+      'id',
+      'title',
+      'description',
+      'thumbnail',
+      'userId',
+      'createdAt',
+    ],
+    include: [{ model: User, attributes: ['id', 'avatar', 'username'] }],
+    order: [['createdAt', 'DESC']],
+  });
+
+  const videosWithViews = await Promise.all(
+    videos.map(async (video) => {
+      const views = await View.count({ where: { videoId: video.id } });
+      video.setDataValue('views', views);
+      return video;
+    })
+  );
+
+  return res.status(200).json({ success: true, data: videosWithViews });
+});
+
+const recommendChannels = asyncHandler(async (req, res, next) => {
+  const channels = await User.findAll({
+    limit: 10,
+    attributes: ['id', 'username', 'avatar', 'channelDescription'],
+    where: { id: { [Op.not]: req.user.id } },
+  });
+
+  const channelsWithData = await Promise.all(
+    channels.map(async (channel) => {
+      const subscribersCount = await Subscription.count({
+        where: { subscribeTo: channel.id },
+      });
+      channel.setDataValue('subscribersCount', subscribersCount);
+
+      const isSubscribed = await Subscription.findOne({
+        where: { subscriber: req.user.id, subscribeTo: channel.id },
+      });
+      channel.setDataValue('isSubscribed', !!isSubscribed);
+
+      const videosCount = await Video.count({ where: { userId: channel.id } });
+      channel.setDataValue('videosCount', videosCount);
+
+      return channel;
+    })
+  );
+
+  return res.status(200).json({ success: true, data: channelsWithData });
+});
+
+const getLikedVideos = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const likes = await Like.aggregate([
+    {
+      $match: {
+        likedBy: new mongoose.Types.ObjectId(userId),
+        video: { $exists: true },
+      },
+    },
+    {
+      $lookup: {
+        from: 'videos',
+        localField: 'video',
+        foreignField: '_id',
+        as: 'videoDetails',
+      },
+    },
+    {
+      $unwind: '$videoDetails',
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'videoDetails.owner',
+        foreignField: '_id',
+        as: 'channelDetails',
+      },
+    },
+    {
+      $unwind: '$channelDetails',
+    },
+    {
+      $project: {
+        video: {
+          _id: '$videoDetails._id',
+          title: '$videoDetails.title',
+          description: '$videoDetails.description',
+          duration: '$videoDetails.duration',
+          views: '$videoDetails.views',
+          thumbnail: '$videoDetails.thumbnail',
+        },
+        channel: {
+          _id: '$channelDetails._id',
+          username: '$channelDetails.username',
+          fullName: '$channelDetails.fullName',
+          avatar: '$channelDetails.avatar',
+        },
+      },
+    },
+  ]);
+
   return res
     .status(200)
     .json(
       new ApiResponse(
         200,
-        user[0].watchHistory,
-        'Watch history fetched successfully.'
+        likes || [],
+        likes.length
+          ? 'Liked videos fetched successfully'
+          : 'No liked videos found'
+      )
+    );
+});
+
+const getHistory = asyncHandler(async (req, res) => {
+  const views = await View.aggregate([
+    {
+      $match: {
+        user: new mongoose.Types.ObjectId(req.user._id),
+      },
+    },
+    {
+      $lookup: {
+        from: 'videos',
+        localField: 'video',
+        foreignField: '_id',
+        as: 'videoDetails',
+      },
+    },
+    {
+      $unwind: '$videoDetails',
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'videoDetails.owner',
+        foreignField: '_id',
+        as: 'channelDetails',
+      },
+    },
+    {
+      $unwind: '$channelDetails',
+    },
+    {
+      $project: {
+        _id: 1,
+        watchTime: 1,
+        createdAt: 1,
+        video: '$videoDetails',
+        channel: {
+          _id: '$channelDetails._id',
+          username: '$channelDetails.username',
+          fullName: '$channelDetails.fullName',
+          avatar: '$channelDetails.avatar',
+        },
+      },
+    },
+    {
+      $sort: { createdAt: -1 },
+    },
+  ]);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        views || [],
+        views.length
+          ? 'View history fetched successfully'
+          : 'No viewing history found'
       )
     );
 });
@@ -542,4 +721,9 @@ export {
   updateUserCoverImage,
   getUserChannelProfile,
   getWatchHistory,
+  getFeed,
+  recommendedVideos,
+  recommendChannels,
+  getLikedVideos,
+  getHistory,
 };

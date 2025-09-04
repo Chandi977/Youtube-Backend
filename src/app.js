@@ -8,7 +8,7 @@ const app = express(); // Create an instance of Express
 // Configure CORS to allow requests from specified origin and enable credentials
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN, // Allowed origin for CORS requests
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000', // Allowed origin for CORS requests
     credentials: true, // Enable sending credentials (e.g., cookies) with CORS requests
   })
 );
