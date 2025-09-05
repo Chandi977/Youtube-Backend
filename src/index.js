@@ -1,16 +1,26 @@
 // Import the dotenv module to load environment variables from a .env file
 import dotenv from 'dotenv';
 
+// Load env based on NODE_ENV
+const envFile =
+  process.env.NODE_ENV === 'production'
+    ? '.env.production'
+    : process.env.NODE_ENV === 'development'
+      ? '.env.development'
+      : '.env';
+
+dotenv.config({ path: envFile });
+
 // Import the function to connect to the MongoDB database
 import connectDB from './config/index.js';
 
 // Import the Express app configuration
 import { app } from './app.js';
 
-// Load environment variables from the .env file located at the root of the project
-dotenv.config({
-  path: './.env', // Path to the .env file
-});
+// // Load environment variables from the .env file located at the root of the project
+// dotenv.config({
+//   path: './.env', // Path to the .env file
+// });
 
 // Connect to the MongoDB database and start the server if successful
 connectDB()
