@@ -13,9 +13,7 @@ import {
   isRedisEnabled,
 } from '../utils/upstash.js';
 
-/**
- * Helper: Get video by ID or throw error
- */
+/** Helper: Get video by ID or throw error */
 const getVideoOrFail = async (videoId) => {
   if (!isValidObjectId(videoId)) throw new ApiError(400, 'Invalid video ID.');
   const video = await Video.findById(videoId);
@@ -23,9 +21,7 @@ const getVideoOrFail = async (videoId) => {
   return video;
 };
 
-/**
- * Helper: Upload file to Cloudinary safely
- */
+/** Helper: Upload file to Cloudinary safely */
 const safeUpload = async (file) => {
   if (!file) return null;
   try {
@@ -34,6 +30,51 @@ const safeUpload = async (file) => {
     throw new ApiError(400, error?.message || 'Error while uploading file');
   }
 };
+
+/** GET ALL VIDEOS WITH PAGINATION/FILTER/SORT */
+const getAllVideos = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    query: searchQuery,
+    sortBy = 'createdAt',
+    sortType = 'desc',
+    userId,
+    isPublished,
+  } = req.queryParams || req.query;
+
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+
+  const matchCriteria = {};
+  if (searchQuery) matchCriteria.title = { $regex: searchQuery, $options: 'i' };
+  if (userId && isValidObjectId(userId))
+    matchCriteria.owner = mongoose.Types.ObjectId(userId);
+  if (isPublished !== undefined)
+    matchCriteria.isPublished = isPublished === 'true' || isPublished === true;
+
+  const videos = await Video.find(matchCriteria)
+    .sort({ [sortBy]: sortType === 'asc' ? 1 : -1 })
+    .skip((pageNum - 1) * limitNum)
+    .limit(limitNum)
+    .lean();
+
+  if (!videos.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No videos found',
+      data: [],
+    });
+  }
+
+  const totalVideos = await Video.countDocuments(matchCriteria);
+
+  return res.status(200).json({
+    success: true,
+    message: 'Videos fetched successfully',
+    data: { videos, total: totalVideos },
+  });
+});
 
 /**
  * PUBLISH VIDEO
@@ -73,59 +114,23 @@ const publishAVideo = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, newVideo, 'Video published successfully'));
 });
-
-/**
- * GET ALL VIDEOS WITH PAGINATION & FILTER
- */
-const getAllVideos = asyncHandler(async (req, res) => {
-  let {
-    page = 1,
-    limit = 10,
-    query,
-    sortBy = 'createdAt',
-    sortType = 'desc',
-    userId,
-  } = req.query;
-
-  page = parseInt(page);
-  limit = parseInt(limit);
-
-  const matchCriteria = {};
-  if (query) matchCriteria.title = { $regex: query, $options: 'i' };
-  if (userId && isValidObjectId(userId))
-    matchCriteria.owner = mongoose.Types.ObjectId(userId);
-
-  const videos = await Video.find(matchCriteria)
-    .sort({ [sortBy]: sortType === 'asc' ? 1 : -1 })
-    .skip((page - 1) * limit)
-    .limit(limit)
-    .lean();
-
-  const totalVideos = await Video.countDocuments(matchCriteria);
-
-  return res.status(200).json({ videos, total: totalVideos });
-});
-
 /**
  * GET VIDEO BY ID WITH REDIS CACHE
  */
 const getVideoById = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (isRedisEnabled) {
-    const cached = await redisGet(`video:${id}`);
-    if (cached)
-      return res.status(200).json({ success: true, data: JSON.parse(cached) });
-  }
-
   const video = await Video.findById(id).populate(
     'owner',
     'fullName username avatar'
   );
-  if (!video) throw new ApiError(404, 'Video not found');
 
-  if (isRedisEnabled)
-    await redisSet(`video:${id}`, JSON.stringify(video), { EX: 3600 });
+  if (!video) {
+    return res.status(404).json({
+      success: false,
+      message: 'Video not found',
+      data: null,
+    });
+  }
 
   res.status(200).json({ success: true, data: video });
 });

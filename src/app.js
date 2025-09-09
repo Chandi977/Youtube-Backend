@@ -94,6 +94,8 @@ app.use('/api/v1/playlist', playlistRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1', upstashRoutes);
 
+// console.log(healthcheckRouter);
+
 // ------------------------
 // Global Error Handler
 // ------------------------

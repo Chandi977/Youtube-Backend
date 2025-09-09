@@ -15,7 +15,7 @@ import {
 const router = Router();
 
 /** ================= PUBLIC ROUTES ================= */
-// Fetch all videos with optional pagination/filter
+// Fetch all videos
 router.get('/getvideos', getAllVideos);
 
 // Search videos
@@ -24,7 +24,7 @@ router.get('/search', searchVideos);
 // Get video by ID
 router.get('/:videoId', getVideoById);
 
-// Get videos by user (owner)
+// Get videos by user
 router.get('/user/:userId', getAllVideos);
 
 /** ================= PROTECTED ROUTES ================= */
@@ -52,36 +52,23 @@ router.patch('/:videoId/toggle-publish', togglePublishStatus);
 // Record video view
 router.post('/:videoId/view', recordView);
 
-/** ================= NEW ROUTES ================= */
-// Fetch published videos only
-router.get(
-  '/published/all',
-  (req, res, next) => {
-    req.query.isPublished = true;
-    next();
-  },
-  getAllVideos
-);
+/** ================= FILTERED ROUTES ================= */
+// Middleware to safely add filters without mutating req.query
+const addFilter = (filter) => (req, res, next) => {
+  req.filter = { ...req.query, ...filter }; // safe
+  next();
+};
 
-// Fetch unpublished videos only (admin/owner)
-router.get(
-  '/unpublished/all',
-  (req, res, next) => {
-    req.query.isPublished = false;
-    next();
-  },
-  getAllVideos
-);
+// Published videos
+router.get('/published/all', addFilter({ isPublished: true }), getAllVideos);
 
-// Fetch top trending videos (sorted by views)
+// Unpublished videos
+router.get('/unpublished/all', addFilter({ isPublished: false }), getAllVideos);
+
+// Trending videos (top 10 by viewsCount)
 router.get(
   '/trending/top',
-  (req, res, next) => {
-    req.query.sortBy = 'views';
-    req.query.sortType = 'desc';
-    req.query.limit = 10; // top 10
-    next();
-  },
+  addFilter({ sortBy: 'viewsCount', sortType: 'desc', limit: 10 }),
   getAllVideos
 );
 

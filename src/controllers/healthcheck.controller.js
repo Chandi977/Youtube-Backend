@@ -1,20 +1,37 @@
-import { ApiError } from '../utils/ApiError.js';
+import mongoose from 'mongoose';
+import { isRedisEnabled, redisPing } from '../utils/upstash.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-// Healthcheck endpoint for checking server status
 const healthcheck = asyncHandler(async (req, res) => {
-  // TODO: Healthcheck response banani hai jo server ke OK status ko return kare
+  const dbState = mongoose.connection.readyState; // 0 = disconnected, 1 = connected
+  let redisStatus = 'disabled';
+
+  if (isRedisEnabled) {
+    try {
+      const pong = await redisPing();
+      redisStatus = pong ? 'connected' : 'error';
+    } catch (err) {
+      redisStatus = 'error';
+    }
+  }
+
   const response = {
-    success: true, // Bata raha hai ki server thik hai
-    message: 'Server is running', // Server ke running status ka message
-    timestamp: new Date().toISOString(), // Server status check ka exact time
+    server: 'ok',
+    timestamp: new Date().toISOString(),
+    database: dbState === 1 ? 'connected' : 'disconnected',
+    redis: redisStatus,
   };
 
-  // Response 200 ke sath json format mein bhejna hai
   return res
     .status(200)
-    .json(new ApiResponse(200, response, 'Sab Badhiya chl rha.')); // Success message in Hinglish
+    .json(
+      new ApiResponse(
+        200,
+        response,
+        'Healthcheck passed: Server is running and connections verified'
+      )
+    );
 });
 
 export { healthcheck };

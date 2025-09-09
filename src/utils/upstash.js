@@ -71,3 +71,13 @@ export async function redisSRem(setKey, member) {
 export async function redisDel(key) {
   return callRedis('del', key);
 }
+export async function redisPing() {
+  if (!isRedisEnabled) return false;
+  try {
+    const result = await callRedis('ping');
+    return result === 'PONG';
+  } catch (err) {
+    console.error('Redis ping failed:', err);
+    return false;
+  }
+}
