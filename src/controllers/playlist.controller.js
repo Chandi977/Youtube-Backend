@@ -3,61 +3,163 @@ import { Playlist } from '../models/playlist.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import {
+  isRedisEnabled,
+  redisGet,
+  redisSet,
+  redisDel,
+} from '../utils/upstash.js';
 
-// Playlist banane ka function
+// Create playlist
 const createPlaylist = asyncHandler(async (req, res) => {
   const { name, description } = req.body;
+  const creator = req.user.id;
 
-  try {
-    const creator = req.user.id; // User se jo create kar raha hai uska ID lena
+  const newPlaylist = await Playlist.create({
+    name,
+    description,
+    owner: creator,
+    videos: [],
+  });
 
-    // Naya playlist banao
-    const newPlaylist = await Playlist.create({
-      name,
-      description,
-      owner: creator,
-      videos: [],
-    });
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, 'Playlist created successfully', newPlaylist));
-  } catch (error) {
-    console.error('Error creating playlist:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, 'Error creating playlist', error.message));
+  // Cache user playlists
+  if (isRedisEnabled) {
+    redisDel(`user:${creator}:playlists`);
   }
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, newPlaylist, 'Playlist created successfully'));
 });
+
+// Get user playlists
+const getUserPlaylists = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  if (!isValidObjectId(userId)) throw new ApiError(400, 'Invalid user ID');
+
+  // Check cache first
+  if (isRedisEnabled) {
+    const cached = await redisGet(`user:${userId}:playlists`);
+    if (cached)
+      return res.status(200).json({ success: true, data: JSON.parse(cached) });
+  }
+
+  const playlists = await Playlist.find({ owner: userId })
+    .select('name description videos')
+    .populate('videos', 'title');
+
+  // Cache the result
+  if (isRedisEnabled) {
+    await redisSet(`user:${userId}:playlists`, JSON.stringify(playlists));
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, playlists, 'User playlists fetched'));
+});
+
+// Add video to playlist
+const addVideoToPlaylist = asyncHandler(async (req, res) => {
+  const { playlistId, videoId } = req.params;
+
+  if (!isValidObjectId(playlistId) || !isValidObjectId(videoId)) {
+    throw new ApiError(400, 'Invalid playlist or video ID');
+  }
+
+  const playlist = await Playlist.findById(playlistId);
+  if (!playlist) throw new ApiError(404, 'Playlist not found');
+
+  playlist.videos.push(videoId);
+  await playlist.save();
+
+  // Invalidate cache
+  if (isRedisEnabled) {
+    redisDel(`playlist:${playlistId}`);
+    redisDel(`user:${playlist.owner}:playlists`);
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, playlist, 'Video added to playlist'));
+});
+
+// Remove video from playlist
+const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
+  const { playlistId, videoId } = req.params;
+  const playlist = await Playlist.findById(playlistId);
+  if (!playlist) throw new ApiError(404, 'Playlist not found');
+
+  playlist.videos = playlist.videos.filter((v) => v.toString() !== videoId);
+  await playlist.save();
+
+  // Invalidate cache
+  if (isRedisEnabled) {
+    redisDel(`playlist:${playlistId}`);
+    redisDel(`user:${playlist.owner}:playlists`);
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, playlist, 'Video removed from playlist'));
+});
+
+// Other functions (update, delete, get by ID) should also use Redis cache invalidation
+
+// Playlist banane ka function
+// const createPlaylist = asyncHandler(async (req, res) => {
+//   const { name, description } = req.body;
+
+//   try {
+//     const creator = req.user.id; // User se jo create kar raha hai uska ID lena
+
+//     // Naya playlist banao
+//     const newPlaylist = await Playlist.create({
+//       name,
+//       description,
+//       owner: creator,
+//       videos: [],
+//     });
+
+//     return res
+//       .status(200)
+//       .json(new ApiResponse(200, 'Playlist created successfully', newPlaylist));
+//   } catch (error) {
+//     console.error('Error creating playlist:', error);
+//     return res
+//       .status(500)
+//       .json(new ApiResponse(500, 'Error creating playlist', error.message));
+//   }
+// });
 
 // User ke sare playlists lene ka function
-const getUserPlaylists = asyncHandler(async (req, res) => {
-  try {
-    const { userId } = req.params;
+// const getUserPlaylists = asyncHandler(async (req, res) => {
+//   try {
+//     const { userId } = req.params;
 
-    if (!isValidObjectId(userId)) {
-      return res
-        .status(400)
-        .json(new ApiResponse(400, userId, 'Invalid user id:'));
-    }
+//     if (!isValidObjectId(userId)) {
+//       return res
+//         .status(400)
+//         .json(new ApiResponse(400, userId, 'Invalid user id:'));
+//     }
 
-    // Playlist fetch karo based on user ID
-    const playlists = await Playlist.find({ owner: userId })
-      .select('name description videos')
-      .populate('videos', 'title');
+//     // Playlist fetch karo based on user ID
+//     const playlists = await Playlist.find({ owner: userId })
+//       .select('name description videos')
+//       .populate('videos', 'title');
 
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, playlists, 'User playlists successfully fetched')
-      );
-  } catch (error) {
-    console.error('Error fetching playlists:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, error.message, 'Something went wrong'));
-  }
-});
+//     return res
+//       .status(200)
+//       .json(
+//         new ApiResponse(200, playlists, 'User playlists successfully fetched')
+//       );
+//   } catch (error) {
+//     console.error('Error fetching playlists:', error);
+//     return res
+//       .status(500)
+//       .json(new ApiResponse(500, error.message, 'Something went wrong'));
+//   }
+// });
 
 // Playlist ko ID se fetch karne ka function
 const getPlaylistById = asyncHandler(async (req, res) => {
@@ -85,77 +187,77 @@ const getPlaylistById = asyncHandler(async (req, res) => {
 });
 
 // Playlist me video add karne ka function
-const addVideoToPlaylist = asyncHandler(async (req, res) => {
-  try {
-    const { playlistId, videoId } = req.params;
-    if (!isValidObjectId(playlistId) || !isValidObjectId(videoId)) {
-      throw new ApiError(400, 'Invalid playlist or video id');
-    }
+// const addVideoToPlaylist = asyncHandler(async (req, res) => {
+//   try {
+//     const { playlistId, videoId } = req.params;
+//     if (!isValidObjectId(playlistId) || !isValidObjectId(videoId)) {
+//       throw new ApiError(400, 'Invalid playlist or video id');
+//     }
 
-    const playlist = await Playlist.findById(playlistId);
+//     const playlist = await Playlist.findById(playlistId);
 
-    if (!playlist) {
-      throw new ApiError(404, 'Playlist not found');
-    }
+//     if (!playlist) {
+//       throw new ApiError(404, 'Playlist not found');
+//     }
 
-    // Video playlist me add kar do
-    playlist.videos.push(videoId);
-    await playlist.save();
+//     // Video playlist me add kar do
+//     playlist.videos.push(videoId);
+//     await playlist.save();
 
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, playlist, 'Video added to playlist successfully')
-      );
-  } catch (error) {
-    console.error('Error adding video to playlist:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, error.message, 'Something went wrong'));
-  }
-});
+//     return res
+//       .status(200)
+//       .json(
+//         new ApiResponse(200, playlist, 'Video added to playlist successfully')
+//       );
+//   } catch (error) {
+//     console.error('Error adding video to playlist:', error);
+//     return res
+//       .status(500)
+//       .json(new ApiResponse(500, error.message, 'Something went wrong'));
+//   }
+// });
 
 // Playlist se video remove karne ka function
-const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
-  try {
-    const { playlistId, videoId } = req.params;
-    if (!isValidObjectId(playlistId) || !isValidObjectId(videoId)) {
-      throw new ApiError(400, 'Invalid playlist or video id');
-    }
+// const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
+//   try {
+//     const { playlistId, videoId } = req.params;
+//     if (!isValidObjectId(playlistId) || !isValidObjectId(videoId)) {
+//       throw new ApiError(400, 'Invalid playlist or video id');
+//     }
 
-    const playlist = await Playlist.findById(playlistId);
+//     const playlist = await Playlist.findById(playlistId);
 
-    if (!playlist) {
-      throw new ApiError(404, 'Playlist not found');
-    }
+//     if (!playlist) {
+//       throw new ApiError(404, 'Playlist not found');
+//     }
 
-    const videoIndex = playlist.videos.indexOf(videoId);
+//     const videoIndex = playlist.videos.indexOf(videoId);
 
-    // Agar video playlist me nahi hai
-    if (videoIndex === -1) {
-      throw new ApiError(404, 'Video not found in playlist');
-    }
+//     // Agar video playlist me nahi hai
+//     if (videoIndex === -1) {
+//       throw new ApiError(404, 'Video not found in playlist');
+//     }
 
-    // Video remove kar do
-    playlist.videos.splice(videoIndex, 1);
-    await playlist.save();
+//     // Video remove kar do
+//     playlist.videos.splice(videoIndex, 1);
+//     await playlist.save();
 
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          playlist,
-          'Video removed from playlist successfully'
-        )
-      );
-  } catch (error) {
-    console.error('Error removing video from playlist:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, error.message, 'Something went wrong'));
-  }
-});
+//     return res
+//       .status(200)
+//       .json(
+//         new ApiResponse(
+//           200,
+//           playlist,
+//           'Video removed from playlist successfully'
+//         )
+//       );
+//   } catch (error) {
+//     console.error('Error removing video from playlist:', error);
+//     return res
+//       .status(500)
+//       .json(new ApiResponse(500, error.message, 'Something went wrong'));
+//   }
+// });
 
 // Playlist delete karne ka function
 const deletePlaylist = asyncHandler(async (req, res) => {

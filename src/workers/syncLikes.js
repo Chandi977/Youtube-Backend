@@ -1,36 +1,35 @@
 // workers/syncLikes.js
-import mongoose from 'mongoose';
-import { redisSMembers, redisGet, redisSet } from '../utils/upstash.js';
+import {
+  redisSMembers,
+  redisGet,
+  redisSRem,
+  isRedisEnabled,
+} from '../utils/upstash.js';
 import { Video } from '../models/video.model.js';
+import logger from '../utils/logger.js';
+// import fetch from 'node-fetch';
 
-// This function will be triggered periodically
 export async function syncLikes() {
+  if (!isRedisEnabled) return logger.warn('Redis not enabled. Skipping like sync.');
+
   try {
-    // 1. Get all videos that have pending like updates
     const dirtyVideos = await redisSMembers('videos:dirty');
-    if (!dirtyVideos || dirtyVideos.length === 0) {
-      console.log('No Like videos to sync.');
-      return;
+
+    // Prevent crash if Redis returns null
+    if (!Array.isArray(dirtyVideos) || dirtyVideos.length === 0) {
+      return logger.info('No videos to sync.');
     }
 
-    console.log(`Syncing ${dirtyVideos.length} videos...`);
-
     for (const videoId of dirtyVideos) {
-      // 2. Get buffered like count from Redis
-      const likeKey = `video:${videoId}:likes`;
-      const count = await redisGet(likeKey);
-
+      const count = await redisGet(`video:${videoId}:likes`);
       if (count !== null) {
-        // 3. Update MongoDB Video.likesCount
         await Video.findByIdAndUpdate(videoId, { likesCount: Number(count) });
-        console.log(`✅ Synced video ${videoId} with ${count} likes.`);
+        logger.info(`Synced video ${videoId} with ${count} likes.`);
       }
-
-      // (Optional) Reset Redis dirty flag
-      // Remove the processed videoId from the dirty set
       await redisSRem('videos:dirty', videoId);
     }
   } catch (err) {
-    console.error('❌ Error syncing likes:', err.message);
+    logger.error('syncLikes worker failed', { error: err.message });
   }
 }
+

@@ -1,39 +1,11 @@
-// src/controllers/user.controller.js
-
-// Auth-related controllers
-import * as AuthController from './User/auth.controllers.js';
-
-// Profile-related controllers
-import * as ProfileController from './User/profile.controllers.js';
-
-// Feed-related controllers
-// import * as FeedController from './User/feed.controllers.js';
-
-// Export all controllers as named exports
-export const {
-  registerUser,
-  loginUser,
-  logoutUser,
-  refreshAccessToken,
-  changeCurrentPassword,
-} = AuthController;
-
-export const {
-  getCurrentUser,
-  updateAccountDetails,
-  updateUserAvatar,
-  updateUserCoverImage,
-  getUserChannelProfile,
-} = ProfileController;
-
-import { User } from '../models/user.model.js';
-import { Video } from '../models/video.model.js';
-import { View } from '../models/view.model.js';
-import { Like } from '../models/like.model.js';
-import { Subscription } from '../models/subscription.model.js';
-import { ApiError } from '../utils/ApiError.js';
-import { ApiResponse } from '../utils/ApiResponse.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import { User } from '../../models/user.model.js';
+import { Video } from '../../models/video.model.js';
+import { View } from '../../models/view.model.js';
+import { Like } from '../../models/like.model.js';
+import { Subscription } from '../../models/subscription.model.js';
+import { ApiError } from '../../utils/ApiError.js';
+import { ApiResponse } from '../../utils/ApiResponse.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
 
 // Get feed for current user based on subscriptions
 const getFeed = asyncHandler(async (req, res) => {

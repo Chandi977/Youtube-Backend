@@ -1,25 +1,29 @@
-import mongoose from 'mongoose'; // Importing mongoose to interact with MongoDB.
-import { DB_NAME } from '../constants.js'; // Importing the database name from constants file.
+import mongoose from 'mongoose';
+import { DB_NAME } from '../constants.js'; // your constants file
+import dotenv from 'dotenv';
 
-// Function to establish a connection to MongoDB
+dotenv.config();
+
 const connectDB = async () => {
   try {
-    // Attempt to connect to MongoDB using the URI from environment variables and the specified DB name
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI is missing in .env file');
+    }
+    // console.log(process.env.MONGODB_URI, DB_NAME);
+
+    // console.log('🔌 Connecting to MongoDB...');
     const connectionInstance = await mongoose.connect(
       `${process.env.MONGODB_URI}/${DB_NAME}`
     );
+    // console.log(connectionInstance);
 
-    // Log successful connection along with the host of the database
-    console.log(
-      `\n MONGODB connected !! DB HOST ${connectionInstance.connection.host}`
-    );
+    // console.log(
+    //   `✅ MongoDB Connected: ${connectionInstance.connection.host}/${DB_NAME}`
+    // );
   } catch (error) {
-    // Log the error if the connection fails
-    console.log('MONGODB CONNECTION FAILED :', error);
-
-    // Exit the process with failure code (1) if connection fails
-    process.exit(1);
+    console.error('❌ MongoDB connection error:', error.message);
+    process.exit(1); // Exit the process if DB connection fails
   }
 };
 
-export default connectDB; // Exporting the connectDB function as default for use in other parts of the application.
+export default connectDB;

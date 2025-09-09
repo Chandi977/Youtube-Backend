@@ -6,7 +6,7 @@ import {
   refreshAccessToken,
   changeCurrentPassword,
   getCurrentUser,
-  updateAcccountDetails,
+  updateAccountDetails,
   updateUserAvatar,
   updateUserCoverImage,
   getUserChannelProfile,
@@ -53,7 +53,7 @@ router.get('/me', getCurrentUser);
 router.patch('/change-password', changeCurrentPassword);
 
 // Update account details
-router.patch('/update-account', updateAcccountDetails);
+router.patch('/update-account', updateAccountDetails);
 
 // Update avatar
 router.patch('/update-avatar', upload.single('avatar'), updateUserAvatar);

@@ -1,25 +1,45 @@
 // utils/upstash.js
+import 'dotenv/config';
+import fetch from 'node-fetch';
+
 const baseUrl = process.env.UPSTASH_REDIS_REST_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-if (!baseUrl || !token) {
-  throw new Error(
-    'Missing Upstash Redis credentials in environment variables.'
+export const isRedisEnabled = !!(baseUrl && token);
+
+if (!isRedisEnabled) {
+  console.warn(
+    '❌ Upstash credentials missing! Redis operations will be skipped.'
   );
+} else {
+  console.log('✅ Upstash credentials found. Redis operations enabled.');
 }
 
 // Generic call helper
 async function callRedis(command, ...args) {
-  const url = `${baseUrl}/${command}/${args.join('/')}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await res.json();
-  return data.result;
+  if (!isRedisEnabled) return null;
+
+  try {
+    const url = `${baseUrl}/${command}/${args.join('/')}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = await res.json();
+    if (data.error) {
+      console.error(`❌ Redis Error: ${data.error}`);
+      return null;
+    }
+
+    return data.result;
+  } catch (err) {
+    console.error('❌ Redis fetch failed:', err);
+    return null; // Prevent crash
+  }
 }
 
-// Common operations
+// Redis operations
 export async function redisSet(key, value) {
   return callRedis('set', key, value);
 }
@@ -42,6 +62,10 @@ export async function redisSAdd(setKey, member) {
 
 export async function redisSMembers(setKey) {
   return callRedis('smembers', setKey);
+}
+
+export async function redisSRem(setKey, member) {
+  return callRedis('srem', setKey, member);
 }
 
 export async function redisDel(key) {

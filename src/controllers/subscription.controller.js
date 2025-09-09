@@ -1,155 +1,136 @@
 import mongoose, { isValidObjectId } from 'mongoose';
 import { User } from '../models/user.model.js';
 import { Subscription } from '../models/subscription.model.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
 
+// Toggle subscription (subscribe/unsubscribe)
 const toggleSubscription = asyncHandler(async (req, res) => {
-  try {
-    const { channelId } = req.params;
-    if (req.user.id === req.params.id) {
-      return next({
-        message: 'You cannot to subscribe to your own channel',
-        statusCode: 400,
-      });
+  const { channelId } = req.params;
+  const userId = req.user.id;
+
+  if (userId === channelId) {
+    throw new ApiError(400, 'You cannot subscribe to your own channel');
+  }
+
+  if (!isValidObjectId(channelId)) {
+    throw new ApiError(400, 'Invalid channel ID');
+  }
+
+  // Fetch channel (cache optional)
+  const channel = await User.findById(channelId).select('_id username');
+  if (!channel) throw new ApiError(404, 'Channel not found');
+
+  // Check subscription
+  const subscription = await Subscription.findOne({
+    subscriber: userId,
+    channel: channelId,
+  });
+
+  if (subscription) {
+    await Subscription.deleteOne({ _id: subscription._id });
+    if (isRedisEnabled) {
+      await redisSet(`user:${userId}:subscriptions`, null); // invalidate cache
+      await redisSet(`channel:${channelId}:subscribers`, null);
     }
-    // Check karo ki `channelId` valid hai ya nahi
-    if (!isValidObjectId(channelId)) {
-      return res.status(400).json(new ApiError(400, 'Invalid channel ID'));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, 'Unsubscribed successfully'));
+  } else {
+    await Subscription.create({ subscriber: userId, channel: channelId });
+    if (isRedisEnabled) {
+      await redisSet(`user:${userId}:subscriptions`, null); // invalidate cache
+      await redisSet(`channel:${channelId}:subscribers`, null);
     }
+    return res
+      .status(201)
+      .json(new ApiResponse(201, null, 'Subscribed successfully'));
+  }
+});
 
-    // User ID nikaalo jo subscribe/unsubscribe kar raha hai
-    const userId = req.user.id;
+// Get all subscribers of a channel
+const getUserChannelSubscribers = asyncHandler(async (req, res) => {
+  const { channelId } = req.params;
 
-    // Channel ko database mein se dhoondho
-    const channel = await User.findById(channelId);
+  if (!isValidObjectId(channelId))
+    throw new ApiError(400, 'Invalid channel ID');
 
-    if (!channel) {
-      throw new ApiError(404, 'Channel not found');
-    }
-
-    // Pehle check karo ki subscription pehle se hai ya nahi
-    const subscription = await Subscription.findOne({
-      subscriber: userId,
-      channel: channelId,
-    });
-
-    // Agar subscription pehle se hai to remove kar do (unsubscribe)
-    if (subscription) {
-      await Subscription.deleteOne({ _id: subscription._id }); // Correct deletion by subscription ID
+  // Check cache first
+  if (isRedisEnabled) {
+    const cached = await redisGet(`channel:${channelId}:subscribers`);
+    if (cached)
       return res
         .status(200)
         .json(
           new ApiResponse(
             200,
-            'Subscription removed',
-            'Subscription remove ho gayi successfully'
+            JSON.parse(cached),
+            'Subscribers fetched from cache'
           )
         );
-    } else {
-      // Agar nahi hai to create kar do (subscribe)
-      await Subscription.create({
-        subscriber: userId,
-        channel: channelId,
-      });
+  }
+
+  const subscribers = await Subscription.find({ channel: channelId }).populate(
+    'subscriber',
+    'username avatar'
+  );
+
+  if (isRedisEnabled)
+    await redisSet(
+      `channel:${channelId}:subscribers`,
+      JSON.stringify(subscribers)
+    );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, subscribers, 'Subscribers fetched successfully')
+    );
+});
+
+// Get all channels a user is subscribed to
+const getSubscribedChannels = asyncHandler(async (req, res) => {
+  const { subscriberId } = req.params;
+
+  if (!isValidObjectId(subscriberId))
+    throw new ApiError(400, 'Invalid subscriber ID');
+
+  // Check cache first
+  if (isRedisEnabled) {
+    const cached = await redisGet(`user:${subscriberId}:subscriptions`);
+    if (cached)
       return res
-        .status(201)
+        .status(200)
         .json(
           new ApiResponse(
-            201,
-            'Subscription added',
-            'Subscription add ho gayi successfully'
+            200,
+            JSON.parse(cached),
+            'Subscribed channels fetched from cache'
           )
         );
-    }
-  } catch (error) {
-    console.error('Something went wrong:', error);
-    return res
-      .status(500)
-      .json(
-        new ApiResponse(
-          500,
-          error.message,
-          'Subscription toggle karte waqt kuch galat ho gaya'
-        )
-      );
   }
-});
 
-const getUserChannelSubscribers = asyncHandler(async (req, res) => {
-  try {
-    const { channelId } = req.params;
-    // console.log(channelId, req.params);
+  const subscriptions = await Subscription.find({
+    subscriber: subscriberId,
+  }).populate('channel', 'username avatar');
 
-    // Check karo ki `channelId` valid hai ya nahi
-    if (!isValidObjectId(channelId)) {
-      return res.status(400).json(new ApiError(400, {}, 'Invalid channel ID'));
-    }
+  if (isRedisEnabled)
+    await redisSet(
+      `user:${subscriberId}:subscriptions`,
+      JSON.stringify(subscriptions)
+    );
 
-    // Channel ke saare subscribers ko dhoondo
-    const subscribers = await Subscription.find({
-      channel: channelId,
-    }).populate('subscriber', 'username');
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          subscribers,
-          'Subscribers successfully fetch ho gaye'
-        )
-      );
-  } catch (error) {
-    console.error('Something went wrong:', error);
-    return res
-      .status(500)
-      .json(
-        new ApiResponse(
-          500,
-          error.message,
-          'Subscribers fetch karte waqt kuch galat ho gaya'
-        )
-      );
-  }
-});
-
-const getSubscribedChannels = asyncHandler(async (req, res) => {
-  try {
-    const { subscriberId } = req.params;
-
-    // Check karo ki `subscriberId` valid hai ya nahi
-    if (!isValidObjectId(subscriberId)) {
-      return res.status(400).json(new ApiError(400, 'Invalid subscriber ID'));
-    }
-
-    // Subscriber ke saare channels fetch karo
-    const subscriptions = await Subscription.find({
-      subscriber: subscriberId,
-    }).populate('channel', 'username');
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          subscriptions,
-          'Subscribed channels fetch ho gaye successfully'
-        )
-      );
-  } catch (error) {
-    console.error('Something went wrong:', error);
-    return res
-      .status(500)
-      .json(
-        new ApiResponse(
-          500,
-          error.message,
-          'Subscribed channels fetch karte waqt kuch galat ho gaya'
-        )
-      );
-  }
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        subscriptions,
+        'Subscribed channels fetched successfully'
+      )
+    );
 });
 
 export { toggleSubscription, getUserChannelSubscribers, getSubscribedChannels };

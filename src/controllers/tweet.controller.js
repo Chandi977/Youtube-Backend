@@ -1,160 +1,199 @@
 import mongoose, { isValidObjectId } from 'mongoose';
 import { Tweet } from '../models/tweet.model.js';
 import { User } from '../models/user.model.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
 
-// Tweet create karne ke liye controller
+/**
+ * CREATE TWEET OR REPLY
+ * If parentTweetId is provided, this tweet is a reply.
+ */
 const createTweet = asyncHandler(async (req, res) => {
-  try {
-    const { content, owner } = req.body;
+  const { content, parentTweetId } = req.body;
+  const owner = req.user.id;
 
-    // Owner ka ID check karo agar valid hai
-    if (!isValidObjectId(owner)) {
-      throw new ApiError(400, 'Invalid owner ID');
-    }
+  if (!content?.trim()) throw new ApiError(400, 'Content cannot be empty');
 
-    // User ko owner ID se find karo
-    const user = await User.findById(owner);
-    if (!user) {
-      throw new ApiError(404, 'User not found');
-    }
-
-    // Naya tweet create karo
-    const newTweet = await Tweet.create({
-      content,
-      owner,
-    });
-
-    // Naya tweet response mein return karo
-    return res
-      .status(201)
-      .json(new ApiResponse(201, newTweet, 'Tweet created successfully'));
-  } catch (error) {
-    console.error('Tweet create karte waqt error aaya:', error);
-    return res
-      .status(500)
-      .json(
-        new ApiResponse(
-          500,
-          error.message,
-          'Tweet create karte waqt kuch galat ho gaya'
-        )
-      );
+  // Check if parent tweet exists
+  let parentTweet = null;
+  if (parentTweetId) {
+    if (!isValidObjectId(parentTweetId))
+      throw new ApiError(400, 'Invalid parent tweet ID');
+    parentTweet = await Tweet.findById(parentTweetId);
+    if (!parentTweet) throw new ApiError(404, 'Parent tweet not found');
   }
+
+  const newTweet = await Tweet.create({
+    content,
+    owner,
+    parentTweet: parentTweetId || null,
+  });
+
+  // Invalidate cache
+  if (isRedisEnabled) {
+    await redisSet(`user:${owner}:tweets`, null);
+    if (parentTweetId) await redisSet(`tweet:${parentTweetId}:replies`, null);
+  }
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, newTweet, 'Tweet created successfully'));
 });
 
-// Specific user ke sabhi tweets retrieve karne ke liye controller
+/**
+ * GET USER TWEETS
+ * Includes original tweets + replies
+ */
 const getUserTweets = asyncHandler(async (req, res) => {
-  try {
-    const userId = req.params.userId;
+  const { userId } = req.params;
+  if (!isValidObjectId(userId)) throw new ApiError(400, 'Invalid user ID');
 
-    // User ID validate karo
-    if (!isValidObjectId(userId)) {
-      return res.status(400).json({
-        error: 'Invalid user ID',
-      });
-    }
-
-    // User ke sabhi tweets find karo
-    const tweets = await Tweet.find({ owner: userId }).populate(
-      'owner',
-      'username'
-    );
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, tweets, 'Tweets successfully retrieve kiye gaye')
-      );
-  } catch (error) {
-    console.error('Tweets retrieve karte waqt error:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, {}, 'Internal Server Error'));
-  }
-});
-
-// Specific tweet update karne ke liye controller
-const updateTweet = asyncHandler(async (req, res) => {
-  try {
-    const { tweetId, updateContent } = req.body;
-
-    // Tweet ID validate karo
-    if (!isValidObjectId(tweetId)) {
-      throw new ApiError(400, 'Invalid tweet ID');
-    }
-
-    // Tweet ID se tweet find karo
-    const tweet = await Tweet.findById(tweetId); // Bug fix: 'await' ka use kiya promise handle karne ke liye
-
-    if (!tweet) {
-      throw new ApiError(404, 'Tweet nahi mila');
-    }
-
-    // Tweet ka content update karo
-    tweet.content = updateContent;
-    await tweet.save({ validateBeforeSave: false });
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, tweet, 'Tweet successfully update kiya gaya'));
-  } catch (error) {
-    console.error('Tweet update karte waqt error:', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, {}, 'Internal Server Error'));
-  }
-});
-
-// Specific tweet delete karne ke liye controller
-const deleteTweet = asyncHandler(async (req, res) => {
-  try {
-    const { tweetId } = req.body;
-    const userId = req.user.id;
-    // console.log(tweetId);
-
-    // Tweet ID validate karo
-    if (!isValidObjectId(tweetId)) {
-      throw new ApiError(400, 'Invalid tweet ID');
-    }
-
-    // Tweet ko tweet ID se find karo
-    const tweet = await Tweet.findById(tweetId);
-
-    if (!tweet) {
-      throw new ApiError(404, 'Tweet nahi mila');
-    }
-
-    // Check karo ki user ka tweet hai ya nahi
-    if (tweet.owner.toString() !== userId) {
+  // Redis cache check
+  if (isRedisEnabled) {
+    const cached = await redisGet(`user:${userId}:tweets`);
+    if (cached)
       return res
-        .status(403)
-        .json(
-          new ApiResponse(
-            403,
-            {},
-            'Aapko ye tweet delete karne ka permission nahi hai'
-          )
-        );
-    }
-
-    // Tweet delete karo
-    await Tweet.deleteOne({ _id: tweetId });
-    // await tweet.remove();
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, {}, 'Tweet successfully delete kiya gaya'));
-  } catch (error) {
-    console.error('Tweet delete karte waqt kuch galat ho gaya:', error);
-    return res
-      .status(500)
-      .json(
-        new ApiResponse(500, {}, 'Tweet delete karte waqt kuch galat ho gaya')
-      );
+        .status(200)
+        .json(new ApiResponse(200, JSON.parse(cached), 'Fetched from cache'));
   }
+
+  const tweets = await Tweet.find({ owner: userId, parentTweet: null })
+    .populate('owner', 'username avatar')
+    .sort({ createdAt: -1 });
+
+  // Cache
+  if (isRedisEnabled)
+    await redisSet(`user:${userId}:tweets`, JSON.stringify(tweets));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, tweets, 'Tweets fetched successfully'));
 });
 
-export { createTweet, getUserTweets, updateTweet, deleteTweet };
+/**
+ * GET REPLIES OF A TWEET
+ */
+const getTweetReplies = asyncHandler(async (req, res) => {
+  const { tweetId } = req.params;
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  // Redis cache
+  if (isRedisEnabled) {
+    const cached = await redisGet(`tweet:${tweetId}:replies`);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, JSON.parse(cached), 'Fetched from cache'));
+  }
+
+  const replies = await Tweet.find({ parentTweet: tweetId })
+    .populate('owner', 'username avatar')
+    .sort({ createdAt: 1 }); // oldest first
+
+  // Cache
+  if (isRedisEnabled)
+    await redisSet(`tweet:${tweetId}:replies`, JSON.stringify(replies));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, replies, 'Replies fetched successfully'));
+});
+
+/**
+ * LIKE / UNLIKE TWEET
+ */
+const toggleLikeTweet = asyncHandler(async (req, res) => {
+  const { tweetId } = req.params;
+  const userId = req.user.id;
+
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  const tweet = await Tweet.findById(tweetId);
+  if (!tweet) throw new ApiError(404, 'Tweet not found');
+
+  const likedIndex = tweet.likes.indexOf(userId);
+  let message = '';
+  if (likedIndex === -1) {
+    tweet.likes.push(userId);
+    message = 'Tweet liked';
+  } else {
+    tweet.likes.splice(likedIndex, 1);
+    message = 'Tweet unliked';
+  }
+
+  await tweet.save();
+
+  // Cache invalidate
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, JSON.stringify(tweet));
+
+  return res.status(200).json(new ApiResponse(200, tweet, message));
+});
+
+/**
+ * UPDATE TWEET
+ */
+const updateTweet = asyncHandler(async (req, res) => {
+  const { tweetId, content } = req.body;
+  const userId = req.user.id;
+
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  const tweet = await Tweet.findById(tweetId);
+  if (!tweet) throw new ApiError(404, 'Tweet not found');
+
+  // Check ownership
+  if (tweet.owner.toString() !== userId)
+    throw new ApiError(403, 'You cannot edit this tweet');
+
+  // Update content only if provided
+  if (content?.trim()) tweet.content = content.trim();
+
+  await tweet.save({ validateBeforeSave: false });
+
+  // Redis cache update
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, JSON.stringify(tweet));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, tweet, 'Tweet updated successfully'));
+});
+
+/**
+ * DELETE TWEET
+ */
+const deleteTweet = asyncHandler(async (req, res) => {
+  const { tweetId } = req.body;
+  const userId = req.user.id;
+
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  const tweet = await Tweet.findById(tweetId);
+  if (!tweet) throw new ApiError(404, 'Tweet not found');
+  if (tweet.owner.toString() !== userId)
+    throw new ApiError(403, 'Cannot delete this tweet');
+
+  await Tweet.deleteOne({ _id: tweetId });
+
+  // Invalidate cache
+  if (isRedisEnabled) {
+    await redisSet(`tweet:${tweetId}`, null);
+    await redisSet(`user:${userId}:tweets`, null);
+    if (tweet.parentTweet)
+      await redisSet(`tweet:${tweet.parentTweet}:replies`, null);
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, 'Tweet deleted successfully'));
+});
+
+export {
+  createTweet,
+  getUserTweets,
+  getTweetReplies,
+  toggleLikeTweet,
+  updateTweet,
+  deleteTweet,
+};

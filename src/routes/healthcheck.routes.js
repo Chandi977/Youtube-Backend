@@ -1,8 +1,31 @@
-    import { Router } from 'express';
-    import { healthcheck } from '../controllers/healthcheck.controller.js';
+// routes/healthcheck.routes.js
+import express from 'express';
+import mongoose from 'mongoose';
+import { isRedisEnabled, redisGet } from '../utils/upstash.js';
 
-    const router = Router();
+const router = express.Router();
 
-    router.route('/').get(healthcheck);
+router.get('/', async (req, res) => {
+  const mongoStatus =
+    mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  let redisStatus = 'disabled';
 
-    export default router;
+  if (isRedisEnabled) {
+    try {
+      await redisGet('healthcheck');
+      redisStatus = 'connected';
+    } catch {
+      redisStatus = 'error';
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    status: {
+      mongo: mongoStatus,
+      redis: redisStatus,
+    },
+  });
+});
+
+export default router;
