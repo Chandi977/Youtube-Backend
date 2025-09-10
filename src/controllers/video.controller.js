@@ -12,6 +12,7 @@ import {
   redisSMembers,
   isRedisEnabled,
 } from '../utils/upstash.js';
+import { processVideo } from '../utils/videoProcessor.js';
 
 /** Helper: Get video by ID or throw error */
 const getVideoOrFail = async (videoId) => {
@@ -94,25 +95,41 @@ const publishAVideo = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'All fields are required');
   }
 
-  const videoFileUrl = await safeUpload(videoFile);
+  // Upload thumbnail to Cloudinary
   const thumbnailUrl = await safeUpload(thumbnail);
 
+  // Save original video temporarily to local folder
+  const videoTempPath = videoFile.path;
+
+  // Create new video document first
   const newVideo = await Video.create({
-    videoFile: {
-      url: videoFileUrl.url,
-      public_id: videoFileUrl.public_id,
-    },
+    title: title.trim(),
+    description: description.trim(),
+    owner: req.user._id,
     thumbnail: {
       url: thumbnailUrl.url,
       public_id: thumbnailUrl.public_id,
     },
-    title: title.trim(),
-    description: description.trim(),
-    duration: Math.round(videoFileUrl.duration || 0),
-    owner: req.user._id,
     isPublished: true,
   });
 
+  // Process video to generate multi-bitrate HLS streams
+  const resolutions = await processVideo(
+    videoTempPath,
+    newVideo._id.toString()
+  );
+
+  // Update video document with resolutions
+  newVideo.videoFile = {
+    url: `/videos/${newVideo._id.toString()}/${videoFile.filename}`, // original
+    resolutions: resolutions, // multi-bitrate HLS
+  };
+  await newVideo.save();
+
+  // Optional: delete temp uploaded video
+  fs.unlinkSync(videoTempPath);
+
+  // Redis caching if enabled
   if (isRedisEnabled)
     await redisSAdd('videos:popular', newVideo._id.toString());
 
@@ -120,6 +137,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, newVideo, 'Video published successfully'));
 });
+
 /**
  * GET VIDEO BY ID WITH REDIS CACHE
  */
