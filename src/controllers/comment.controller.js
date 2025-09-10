@@ -10,61 +10,46 @@ const getVideoComments = asyncHandler(async (req, res) => {
     const { videoId } = req.params;
     const { page = 1, limit = 10 } = req.query;
 
-    // Aggregate pipeline se comments fetch kar rahe hain
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+
     const pipeline = [
-      {
-        $match: {
-          video: new mongoose.Types.ObjectId(videoId), // Video ke ID ke sath match karo
-        },
-      },
-      {
-        $sort: {
-          createdAt: -1, // Naye comments pehle aayenge
-        },
-      },
-      {
-        $skip: (page - 1) * limit, // Pagination ke liye skip karo
-      },
-      {
-        $limit: 10, // Limit set karo
-      },
+      { $match: { video: new mongoose.Types.ObjectId(videoId) } },
+      { $sort: { createdAt: -1 } },
+      { $skip: (pageNum - 1) * limitNum },
+      { $limit: limitNum },
       {
         $lookup: {
-          from: 'users', // 'users' collection se data lo
-          localField: 'owner', // Owner field ka reference user ke ID se match karo
+          from: 'users',
+          localField: 'owner',
           foreignField: '_id',
-          as: 'userDetails', // User ke details ko userDetails field mein daalo
+          as: 'userDetails',
         },
       },
       {
         $project: {
-          _id: 1, // Comment ke fields select karna
-          text: 1,
+          _id: 1,
+          content: 1,
           createdAt: 1,
-          user: {
-            _id: '$userDetails._id',
-            username: '$userDetails.username',
-            avatar: '$userDetails.avatar',
-          },
+          user: { $arrayElemAt: ['$userDetails', 0] },
         },
       },
     ];
-    // console.log(pipeline);
 
-    const comments = await Comment.aggregate(pipeline); // Aggregate query se comments fetch karo
-    // console.log(videoId, comments, comments.length);
+    const comments = await Comment.aggregate(pipeline);
 
     if (!comments.length) {
-      throw new ApiError(404, 'No comments found for this video'); // Agar comments nahi hai to error throw karo
+      return res
+        .status(200)
+        .json(new ApiResponse(200, [], 'No comments found for this video'));
     }
+
     return res
-      .status(200) // 200 status code se success response
+      .status(200)
       .json(new ApiResponse(200, comments, 'Comments successfully fetched.'));
   } catch (error) {
-    console.error('Error aya hai getVideoComments pe :', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, error, 'Kuch to gadbad hai server mai'));
+    console.error('Error in getVideoComments:', error);
+    return res.status(500).json(new ApiResponse(500, null, 'Server error'));
   }
 });
 

@@ -32,6 +32,9 @@ const safeUpload = async (file) => {
 };
 
 /** GET ALL VIDEOS WITH PAGINATION/FILTER/SORT */
+/**
+ * GET ALL VIDEOS - GLOBAL FEED
+ */
 const getAllVideos = asyncHandler(async (req, res) => {
   const {
     page = 1,
@@ -39,21 +42,24 @@ const getAllVideos = asyncHandler(async (req, res) => {
     query: searchQuery,
     sortBy = 'createdAt',
     sortType = 'desc',
-    userId,
-    isPublished,
-  } = req.queryParams || req.query;
+    isPublished, // optional filter for published videos
+  } = req.query;
 
   const pageNum = parseInt(page);
   const limitNum = parseInt(limit);
 
+  // Build query
   const matchCriteria = {};
-  if (searchQuery) matchCriteria.title = { $regex: searchQuery, $options: 'i' };
-  if (userId && isValidObjectId(userId))
-    matchCriteria.owner = mongoose.Types.ObjectId(userId);
-  if (isPublished !== undefined)
+  if (searchQuery) {
+    matchCriteria.title = { $regex: searchQuery, $options: 'i' };
+  }
+  if (isPublished !== undefined) {
     matchCriteria.isPublished = isPublished === 'true' || isPublished === true;
+  }
 
+  // Fetch videos globally
   const videos = await Video.find(matchCriteria)
+    .populate('owner', 'username fullName avatar') // include uploader info
     .sort({ [sortBy]: sortType === 'asc' ? 1 : -1 })
     .skip((pageNum - 1) * limitNum)
     .limit(limitNum)
@@ -69,10 +75,10 @@ const getAllVideos = asyncHandler(async (req, res) => {
 
   const totalVideos = await Video.countDocuments(matchCriteria);
 
-  return res.status(200).json({
+  res.status(200).json({
     success: true,
     message: 'Videos fetched successfully',
-    data: { videos, total: totalVideos },
+    data: { videos, total: totalVideos, page: pageNum, limit: limitNum },
   });
 });
 
@@ -118,11 +124,12 @@ const publishAVideo = asyncHandler(async (req, res) => {
  * GET VIDEO BY ID WITH REDIS CACHE
  */
 const getVideoById = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const video = await Video.findById(id).populate(
+  const { videoId } = req.params;
+  const video = await Video.findById(videoId).populate(
     'owner',
     'fullName username avatar'
   );
+  // console.log(videoId, video);
 
   if (!video) {
     return res.status(404).json({
