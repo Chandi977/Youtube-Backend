@@ -1,54 +1,64 @@
 import { v2 as cloudinary } from 'cloudinary';
 import fs from 'fs';
 
-// Configure Cloudinary with environment variables
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME, // Cloud name from Cloudinary account
-  api_key: process.env.CLOUDINARY_API_KEY, // API key from Cloudinary account
-  api_secret: process.env.CLOUDINARY_API_SECRET, // API secret from Cloudinary account
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
 });
 
-// Function to upload a file to Cloudinary
-const uploadOnCloudinary = async (localFilePath) => {
-  try {
-    // If no file path is provided, return null
-    if (!localFilePath) return null;
+const uploadOnCloudinary = async (localFilePath, type = 'auto') => {
+  if (!localFilePath) return null;
 
-    // Upload the file to Cloudinary with automatic resource type detection
+  let resourceType = 'auto';
+  if (type === 'video') resourceType = 'video';
+  else if (type === 'image') resourceType = 'image';
+
+  try {
+    // Step 1: Upload without eager
     const response = await cloudinary.uploader.upload(localFilePath, {
-      resource_type: 'auto', // Automatically detect file type (e.g., image, video)
+      resource_type: resourceType,
+      use_filename: false,
+      unique_filename: true,
     });
 
-    // File has been successfully uploaded
-    // console.log('file is uploaded on cloudinary ', response.url); // Uncomment to log the URL of the uploaded file
+    // Step 2: If video, generate adaptive streams asynchronously
+    if (resourceType === 'video') {
+      cloudinary.uploader
+        .explicit(response.public_id, {
+          resource_type: 'video',
+          type: 'upload',
+          eager: [
+            { format: 'mp4', quality: 'auto', width: 1920 },
+            { format: 'mp4', quality: '70', width: 1280 },
+            { format: 'mp4', quality: '60', width: 854 },
+            { format: 'mp4', quality: '50', width: 640 },
+          ],
+          eager_async: true,
+        })
+        .then(() => console.log('Adaptive streams processing started'))
+        .catch((err) => console.error('Eager processing error:', err));
+    }
 
-    // Delete the local temporary file after successful upload
-    fs.unlinkSync(localFilePath);
-
-    return response; // Return the response from Cloudinary
+    // Remove local file
+    fs.existsSync(localFilePath) && fs.unlinkSync(localFilePath);
+    return response;
   } catch (error) {
-    // Delete the local temporary file in case of upload failure
-    fs.unlinkSync(localFilePath); // Removes the file from local storage regardless of upload success
-    console.error('Cloudinary upload error:', error);
-    return null; // Return null if there was an error during upload
+    fs.existsSync(localFilePath) && fs.unlinkSync(localFilePath);
+    console.error('Cloudinary upload error:', error.message || error);
+    throw new Error('Cloudinary upload failed: ' + error.message);
   }
 };
 
-const deleteFromCloudinary = async (imageUrl) => {
-  if (!imageUrl) return null;
+const deleteFromCloudinary = async (publicId, type = 'video') => {
+  if (!publicId) return null;
   try {
-    // Extract the public_id properly from full URL
-    const parts = imageUrl.split('/');
-    const fileName = parts.pop(); // e.g. avatar_123.png
-    const folderPath = parts.slice(7).join('/'); // skip domain, /image/upload/..., keep folder path
-    const publicId = `${folderPath}/${fileName.split('.')[0]}`;
-
-    const result = await cloudinary.uploader.destroy(publicId);
-    return result;
+    return await cloudinary.uploader.destroy(publicId, { resource_type: type });
   } catch (error) {
-    console.error('Cloudinary delete error:', error);
+    console.error('Cloudinary delete error:', error.message || error);
     return null;
   }
 };
 
-export { uploadOnCloudinary, deleteFromCloudinary }; // Export the function for use in other modules
+export { uploadOnCloudinary, deleteFromCloudinary };

@@ -10,6 +10,7 @@ import {
   togglePublishStatus,
   recordView,
   searchVideos,
+  streamVideo,
 } from '../controllers/video.controller.js';
 
 const router = Router();
@@ -26,6 +27,9 @@ router.get('/:videoId', getVideoById);
 
 // Get videos by user
 router.get('/user/:userId', getAllVideos);
+
+// Stream video with range requests ✅
+router.get('/stream/:videoId', streamVideo);
 
 /** ================= PROTECTED ROUTES ================= */
 router.use(verifyJWT);
