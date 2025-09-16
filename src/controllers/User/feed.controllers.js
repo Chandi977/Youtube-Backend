@@ -6,10 +6,20 @@ import { Subscription } from '../../models/subscription.model.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { redisGet, redisSet, isRedisEnabled } from '../../utils/upstash.js';
 
-// Get feed for current user based on subscriptions
+// ----------------------- FEED -----------------------
 const getFeed = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:feed`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Feed fetched from cache'));
+  }
 
   const subscriptions = await Subscription.find({ subscriber: userId }).select(
     'channel'
@@ -20,7 +30,6 @@ const getFeed = asyncHandler(async (req, res) => {
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  // Add views count to each video
   const videosWithViews = await Promise.all(
     videos.map(async (video) => {
       const views = await View.countDocuments({ video: video._id });
@@ -28,13 +37,27 @@ const getFeed = asyncHandler(async (req, res) => {
     })
   );
 
+  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 30); // cache 30s
+
   res
     .status(200)
     .json(new ApiResponse(200, videosWithViews, 'Feed fetched successfully'));
 });
 
-// Get recommended videos (latest videos)
+// ----------------------- RECOMMENDED VIDEOS -----------------------
 const recommendedVideos = asyncHandler(async (req, res) => {
+  const cacheKey = 'recommendedVideos';
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(
+          new ApiResponse(200, cached, 'Recommended videos fetched from cache')
+        );
+  }
+
   const videos = await Video.find()
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
@@ -45,6 +68,8 @@ const recommendedVideos = asyncHandler(async (req, res) => {
       return { ...video.toObject(), views };
     })
   );
+
+  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 60); // cache 1min
 
   res
     .status(200)
@@ -57,18 +82,27 @@ const recommendedVideos = asyncHandler(async (req, res) => {
     );
 });
 
-// Get user's watch history
+// ----------------------- WATCH HISTORY -----------------------
 const getWatchHistory = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).populate({
+  const userId = req.user._id;
+  const cacheKey = `user:${userId}:watchHistory`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Watch history fetched from cache'));
+  }
+
+  const user = await User.findById(userId).populate({
     path: 'watchHistory',
     populate: { path: 'owner', select: 'fullName username avatar' },
   });
 
-  if (!user || !user.watchHistory.length) {
+  if (!user || !user.watchHistory.length)
     throw new ApiError(404, 'No watch history found');
-  }
 
-  // Get views count for each video in watch history
   const videoIds = user.watchHistory.map((video) => video._id);
   const videoViews = await Video.aggregate([
     { $match: { _id: { $in: videoIds } } },
@@ -85,11 +119,10 @@ const getWatchHistory = asyncHandler(async (req, res) => {
 
   const watchHistory = user.watchHistory.map((video) => {
     const videoWithViews = videoViews.find((v) => v._id.equals(video._id));
-    return {
-      ...video.toObject(),
-      likesCount: videoWithViews?.likesCount || 0,
-    };
+    return { ...video.toObject(), likesCount: videoWithViews?.likesCount || 0 };
   });
+
+  if (isRedisEnabled) await redisSet(cacheKey, watchHistory, 60);
 
   res
     .status(200)
@@ -98,9 +131,18 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     );
 });
 
-// Get liked videos for current user
+// ----------------------- LIKED VIDEOS -----------------------
 const getLikedVideos = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:likedVideos`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Liked videos fetched from cache'));
+  }
 
   const likes = await Like.find({
     likedBy: userId,
@@ -127,6 +169,8 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     },
   }));
 
+  if (isRedisEnabled) await redisSet(cacheKey, likedVideos, 60);
+
   res
     .status(200)
     .json(
@@ -140,9 +184,18 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     );
 });
 
-// Get complete user view history
+// ----------------------- COMPLETE VIEW HISTORY -----------------------
 const getHistory = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:history`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'History fetched from cache'));
+  }
 
   const views = await View.find({ user: userId })
     .populate({
@@ -171,6 +224,8 @@ const getHistory = asyncHandler(async (req, res) => {
     },
   }));
 
+  if (isRedisEnabled) await redisSet(cacheKey, history, 60);
+
   res
     .status(200)
     .json(
@@ -184,10 +239,19 @@ const getHistory = asyncHandler(async (req, res) => {
     );
 });
 
+// ----------------------- RECOMMEND CHANNELS -----------------------
 const recommendChannels = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:recommendedChannels`;
 
-  // Exclude current user
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Channels fetched from cache'));
+  }
+
   const channels = await User.find({ _id: { $ne: userId } })
     .select('username avatar channelDescription')
     .limit(10);
@@ -211,6 +275,8 @@ const recommendChannels = asyncHandler(async (req, res) => {
       };
     })
   );
+
+  if (isRedisEnabled) await redisSet(cacheKey, channelsWithData, 300); // cache 5 min
 
   res
     .status(200)

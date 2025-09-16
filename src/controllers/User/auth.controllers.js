@@ -1,3 +1,4 @@
+// controllers/auth.controller.js
 import jwt from 'jsonwebtoken';
 import { User } from '../../models/user.model.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -7,6 +8,12 @@ import {
   uploadOnCloudinary,
   deleteFromCloudinary,
 } from '../../utils/cloudinary.js';
+import {
+  redisGet,
+  redisSet,
+  redisDel,
+  isRedisEnabled,
+} from '../../utils/upstash.js';
 
 // Generate access & refresh tokens
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -15,18 +22,27 @@ const generateAccessAndRefreshTokens = async (userId) => {
   const refreshToken = user.generateRefreshToken();
   user.refreshToken = refreshToken;
   await user.save({ validateBeforeSave: false });
+  // Cache basic user info
+  if (isRedisEnabled) {
+    const userData = {
+      _id: user._id,
+      username: user.username,
+      fullName: user.fullName,
+      avatar: user.avatar,
+      coverImage: user.coverImage,
+    };
+    await redisSet(`user:${user._id}:profile`, JSON.stringify(userData), 3600); // 1 hour TTL
+  }
   return { accessToken, refreshToken };
 };
 
 // REGISTER
 const registerUser = asyncHandler(async (req, res) => {
   const { fullName, email, username, password } = req.body;
-
   if ([fullName, email, username, password].some((f) => !f?.trim())) {
     throw new ApiError(400, 'All fields are required');
   }
 
-  // Basic validations
   if (!/^[a-zA-Z\s]{2,}$/.test(fullName))
     throw new ApiError(400, 'Fullname invalid');
   if (!/^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/.test(email))
@@ -57,6 +73,22 @@ const registerUser = asyncHandler(async (req, res) => {
     coverImage: coverImage?.url || '',
   });
 
+  // Cache user profile
+  if (isRedisEnabled) {
+    const cachedUser = {
+      _id: user._id,
+      username: user.username,
+      fullName: user.fullName,
+      avatar: user.avatar,
+      coverImage: user.coverImage,
+    };
+    await redisSet(
+      `user:${user._id}:profile`,
+      JSON.stringify(cachedUser),
+      3600
+    );
+  }
+
   const createdUser = await User.findById(user._id).select(
     '-password -refreshToken'
   );
@@ -80,11 +112,12 @@ const loginUser = asyncHandler(async (req, res) => {
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
+
   const loggedInUser = await User.findById(user._id).select(
     '-password -refreshToken'
   );
-
   const options = { httpOnly: true, secure: true };
+
   res
     .status(200)
     .cookie('accessToken', accessToken, options)
@@ -101,6 +134,7 @@ const loginUser = asyncHandler(async (req, res) => {
 // LOGOUT
 const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(req.user._id, { refreshToken: undefined });
+  if (isRedisEnabled) await redisDel(`user:${req.user._id}:profile`);
   const options = { httpOnly: true, secure: true };
   res
     .status(200)
@@ -151,6 +185,10 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 
   user.password = newPassword;
   await user.save({ validateBeforeSave: false });
+
+  // Invalidate cached profile
+  if (isRedisEnabled) await redisDel(`user:${req.user._id}:profile`);
+
   res
     .status(200)
     .json(new ApiResponse(200, {}, 'Password changed successfully'));

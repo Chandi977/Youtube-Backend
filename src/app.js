@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+dotenv.config();
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import hpp from 'hpp';
@@ -9,14 +10,14 @@ import xssClean from 'xss-clean';
 import mongoSanitize from 'express-mongo-sanitize';
 import compression from 'compression';
 import fetch from 'node-fetch';
+
 import { syncLikes } from './workers/syncLikes.js';
 import logger, { requestLogger } from './utils/logger.js';
 import { isRedisEnabled } from './utils/upstash.js';
 // console.log('[DEBUG] isRedisEnabled:', isRedisEnabled);
 import errorHandler from './middlewares/errorHandler.middleware.js';
-// import connectDB from './db/index.js';
+
 // Load env
-dotenv.config();
 
 const app = express();
 // console.log(app);
