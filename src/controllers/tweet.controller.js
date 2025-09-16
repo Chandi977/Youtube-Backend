@@ -4,19 +4,20 @@ import { User } from '../models/user.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
-import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
+import {
+  redisGet,
+  redisSet,
+  redisDel,
+  isRedisEnabled,
+} from '../utils/upstash.js';
 
-/**
- * CREATE TWEET OR REPLY
- * If parentTweetId is provided, this tweet is a reply.
- */
+// -------------------- CREATE TWEET OR REPLY --------------------
 const createTweet = asyncHandler(async (req, res) => {
   const { content, parentTweetId } = req.body;
   const owner = req.user.id;
 
   if (!content?.trim()) throw new ApiError(400, 'Content cannot be empty');
 
-  // Check if parent tweet exists
   let parentTweet = null;
   if (parentTweetId) {
     if (!isValidObjectId(parentTweetId))
@@ -31,10 +32,10 @@ const createTweet = asyncHandler(async (req, res) => {
     parentTweet: parentTweetId || null,
   });
 
-  // Invalidate cache
+  // Cache invalidation
   if (isRedisEnabled) {
-    await redisSet(`user:${owner}:tweets`, null);
-    if (parentTweetId) await redisSet(`tweet:${parentTweetId}:replies`, null);
+    await redisDel(`user:${owner}:tweets`);
+    if (parentTweetId) await redisDel(`tweet:${parentTweetId}:replies`);
   }
 
   return res
@@ -42,68 +43,55 @@ const createTweet = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, newTweet, 'Tweet created successfully'));
 });
 
-/**
- * GET USER TWEETS
- * Includes original tweets + replies
- */
+// -------------------- GET USER TWEETS --------------------
 const getUserTweets = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   if (!isValidObjectId(userId)) throw new ApiError(400, 'Invalid user ID');
 
-  // Redis cache check
   if (isRedisEnabled) {
     const cached = await redisGet(`user:${userId}:tweets`);
     if (cached)
       return res
         .status(200)
-        .json(new ApiResponse(200, JSON.parse(cached), 'Fetched from cache'));
+        .json(new ApiResponse(200, cached, 'Fetched from cache'));
   }
 
   const tweets = await Tweet.find({ owner: userId, parentTweet: null })
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  // Cache
-  if (isRedisEnabled)
-    await redisSet(`user:${userId}:tweets`, JSON.stringify(tweets));
+  if (isRedisEnabled) await redisSet(`user:${userId}:tweets`, tweets);
 
   return res
     .status(200)
     .json(new ApiResponse(200, tweets, 'Tweets fetched successfully'));
 });
 
-/**
- * GET REPLIES OF A TWEET
- */
+// -------------------- GET TWEET REPLIES --------------------
 const getTweetReplies = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
   if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
 
-  // Redis cache
   if (isRedisEnabled) {
     const cached = await redisGet(`tweet:${tweetId}:replies`);
     if (cached)
       return res
         .status(200)
-        .json(new ApiResponse(200, JSON.parse(cached), 'Fetched from cache'));
+        .json(new ApiResponse(200, cached, 'Fetched from cache'));
   }
 
   const replies = await Tweet.find({ parentTweet: tweetId })
     .populate('owner', 'username avatar')
-    .sort({ createdAt: 1 }); // oldest first
+    .sort({ createdAt: 1 });
 
-  // Cache
-  if (isRedisEnabled)
-    await redisSet(`tweet:${tweetId}:replies`, JSON.stringify(replies));
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}:replies`, replies);
 
   return res
     .status(200)
     .json(new ApiResponse(200, replies, 'Replies fetched successfully'));
 });
 
-/**
- * LIKE / UNLIKE TWEET
- */
+// -------------------- LIKE / UNLIKE TWEET --------------------
 const toggleLikeTweet = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
   const userId = req.user.id;
@@ -125,15 +113,13 @@ const toggleLikeTweet = asyncHandler(async (req, res) => {
 
   await tweet.save();
 
-  // Cache invalidate
-  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, JSON.stringify(tweet));
+  // Cache update
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, tweet);
 
   return res.status(200).json(new ApiResponse(200, tweet, message));
 });
 
-/**
- * UPDATE TWEET
- */
+// -------------------- UPDATE TWEET --------------------
 const updateTweet = asyncHandler(async (req, res) => {
   const { tweetId, content } = req.body;
   const userId = req.user.id;
@@ -143,26 +129,21 @@ const updateTweet = asyncHandler(async (req, res) => {
   const tweet = await Tweet.findById(tweetId);
   if (!tweet) throw new ApiError(404, 'Tweet not found');
 
-  // Check ownership
   if (tweet.owner.toString() !== userId)
     throw new ApiError(403, 'You cannot edit this tweet');
 
-  // Update content only if provided
   if (content?.trim()) tweet.content = content.trim();
 
   await tweet.save({ validateBeforeSave: false });
 
-  // Redis cache update
-  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, JSON.stringify(tweet));
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, tweet);
 
   return res
     .status(200)
     .json(new ApiResponse(200, tweet, 'Tweet updated successfully'));
 });
 
-/**
- * DELETE TWEET
- */
+// -------------------- DELETE TWEET --------------------
 const deleteTweet = asyncHandler(async (req, res) => {
   const { tweetId } = req.body;
   const userId = req.user.id;
@@ -176,12 +157,11 @@ const deleteTweet = asyncHandler(async (req, res) => {
 
   await Tweet.deleteOne({ _id: tweetId });
 
-  // Invalidate cache
+  // Cache invalidation
   if (isRedisEnabled) {
-    await redisSet(`tweet:${tweetId}`, null);
-    await redisSet(`user:${userId}:tweets`, null);
-    if (tweet.parentTweet)
-      await redisSet(`tweet:${tweet.parentTweet}:replies`, null);
+    await redisDel(`tweet:${tweetId}`);
+    await redisDel(`user:${userId}:tweets`);
+    if (tweet.parentTweet) await redisDel(`tweet:${tweet.parentTweet}:replies`);
   }
 
   return res

@@ -4,9 +4,14 @@ import { Subscription } from '../models/subscription.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
-import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
+import {
+  redisGet,
+  redisSet,
+  isRedisEnabled,
+  redisDel,
+} from '../utils/upstash.js';
 
-// Toggle subscription (subscribe/unsubscribe)
+// -------------------- Toggle subscription --------------------
 const toggleSubscription = asyncHandler(async (req, res) => {
   const { channelId } = req.params;
   const userId = req.user.id;
@@ -15,11 +20,10 @@ const toggleSubscription = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'You cannot subscribe to your own channel');
   }
 
-  if (!isValidObjectId(channelId)) {
+  if (!isValidObjectId(channelId))
     throw new ApiError(400, 'Invalid channel ID');
-  }
 
-  // Fetch channel (cache optional)
+  // Fetch channel
   const channel = await User.findById(channelId).select('_id username');
   if (!channel) throw new ApiError(404, 'Channel not found');
 
@@ -31,26 +35,32 @@ const toggleSubscription = asyncHandler(async (req, res) => {
 
   if (subscription) {
     await Subscription.deleteOne({ _id: subscription._id });
+
+    // Invalidate cache
     if (isRedisEnabled) {
-      await redisSet(`user:${userId}:subscriptions`, null); // invalidate cache
-      await redisSet(`channel:${channelId}:subscribers`, null);
+      await redisDel(`user:${userId}:subscriptions`);
+      await redisDel(`channel:${channelId}:subscribers`);
     }
+
     return res
       .status(200)
       .json(new ApiResponse(200, null, 'Unsubscribed successfully'));
   } else {
     await Subscription.create({ subscriber: userId, channel: channelId });
+
+    // Invalidate cache
     if (isRedisEnabled) {
-      await redisSet(`user:${userId}:subscriptions`, null); // invalidate cache
-      await redisSet(`channel:${channelId}:subscribers`, null);
+      await redisDel(`user:${userId}:subscriptions`);
+      await redisDel(`channel:${channelId}:subscribers`);
     }
+
     return res
       .status(201)
       .json(new ApiResponse(201, null, 'Subscribed successfully'));
   }
 });
 
-// Get all subscribers of a channel
+// -------------------- Get all subscribers of a channel --------------------
 const getUserChannelSubscribers = asyncHandler(async (req, res) => {
   const { channelId } = req.params;
 
@@ -60,16 +70,11 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
   // Check cache first
   if (isRedisEnabled) {
     const cached = await redisGet(`channel:${channelId}:subscribers`);
-    if (cached)
+    if (cached) {
       return res
         .status(200)
-        .json(
-          new ApiResponse(
-            200,
-            JSON.parse(cached),
-            'Subscribers fetched from cache'
-          )
-        );
+        .json(new ApiResponse(200, cached, 'Subscribers fetched from cache'));
+    }
   }
 
   const subscribers = await Subscription.find({ channel: channelId }).populate(
@@ -77,11 +82,9 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     'username avatar'
   );
 
+  // Cache the result
   if (isRedisEnabled)
-    await redisSet(
-      `channel:${channelId}:subscribers`,
-      JSON.stringify(subscribers)
-    );
+    await redisSet(`channel:${channelId}:subscribers`, subscribers);
 
   return res
     .status(200)
@@ -90,7 +93,7 @@ const getUserChannelSubscribers = asyncHandler(async (req, res) => {
     );
 });
 
-// Get all channels a user is subscribed to
+// -------------------- Get all channels a user is subscribed to --------------------
 const getSubscribedChannels = asyncHandler(async (req, res) => {
   const { subscriberId } = req.params;
 
@@ -100,27 +103,22 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
   // Check cache first
   if (isRedisEnabled) {
     const cached = await redisGet(`user:${subscriberId}:subscriptions`);
-    if (cached)
+    if (cached) {
       return res
         .status(200)
         .json(
-          new ApiResponse(
-            200,
-            JSON.parse(cached),
-            'Subscribed channels fetched from cache'
-          )
+          new ApiResponse(200, cached, 'Subscribed channels fetched from cache')
         );
+    }
   }
 
   const subscriptions = await Subscription.find({
     subscriber: subscriberId,
   }).populate('channel', 'username avatar');
 
+  // Cache the result
   if (isRedisEnabled)
-    await redisSet(
-      `user:${subscriberId}:subscriptions`,
-      JSON.stringify(subscriptions)
-    );
+    await redisSet(`user:${subscriberId}:subscriptions`, subscriptions);
 
   return res
     .status(200)
