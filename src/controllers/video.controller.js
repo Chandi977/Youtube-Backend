@@ -112,34 +112,39 @@ const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 // PUBLISH VIDEO
+
 const publishAVideo = asyncHandler(async (req, res) => {
   const { title, description } = req.body;
   const videoFile = req.files?.['videoFile']?.[0];
   const thumbnail = req.files?.['thumbnail']?.[0];
 
-  if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail)
+  if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail) {
     throw new ApiError(400, 'All fields are required');
+  }
 
-  const uploadedThumb = await safeUpload(thumbnail, 'image');
-  const uploadedVideo = await safeUpload(videoFile, 'video');
+  // Upload thumbnail to Cloudinary
+  const uploadedThumb = await uploadOnCloudinary(thumbnail.path, 'image');
+
+  // Upload video to Cloudinary with adaptive qualities
+  const uploadedVideo = await uploadOnCloudinary(videoFile.path, 'video');
 
   const newVideo = await Video.create({
     title: title.trim(),
     description: description.trim(),
     owner: req.user._id,
-    thumbnail: { url: uploadedThumb.url, public_id: uploadedThumb.public_id },
+    thumbnail: {
+      url: uploadedThumb.secure_url,
+      public_id: uploadedThumb.public_id,
+    },
     videoFile: {
-      url: uploadedVideo.url,
+      url: uploadedVideo.secure_url, // main video URL
       public_id: uploadedVideo.public_id,
-      eager: uploadedVideo.eager || [],
+      eager: uploadedVideo.eager || [], // adaptive resolutions
       streaming_profile: 'hd',
       duration: uploadedVideo.duration || 0,
     },
     isPublished: true,
   });
-
-  if (isRedisEnabled)
-    await redisSAdd('videos:popular', newVideo._id.toString());
 
   res
     .status(201)
