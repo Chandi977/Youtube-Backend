@@ -5,113 +5,89 @@ import { Like } from '../models/like.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
 
-// Channel stats fetch karne ka function (like total views, subscribers, videos, likes, etc.)
+// ====================== HELPERS ======================
 
+// Aggregate total views for a user's videos
+const getTotalViews = async (userId) => {
+  const pipeline = [
+    { $match: { owner: new mongoose.Types.ObjectId(userId) } },
+    { $group: { _id: null, totalViews: { $sum: '$viewsCount' } } },
+  ];
+  const result = await Video.aggregate(pipeline);
+  return result.length ? result[0].totalViews : 0;
+};
+
+// Aggregate total likes for a user
+const getTotalLikes = async (userId) => {
+  const pipeline = [
+    { $match: { likedBy: new mongoose.Types.ObjectId(userId) } },
+    { $group: { _id: null, totalLikes: { $sum: 1 } } },
+  ];
+  const result = await Like.aggregate(pipeline);
+  return result.length ? result[0].totalLikes : 0;
+};
+
+// ====================== CONTROLLERS ======================
+
+// GET CHANNEL STATS (views, videos, likes, subscribers)
 const getChannelStats = asyncHandler(async (req, res) => {
-  try {
-    const userId = req.params.userId; // Channel ka user ID le rahe hain
+  const { userId } = req.params;
+  if (!mongoose.isValidObjectId(userId))
+    throw new ApiError(400, 'Invalid user ID');
 
-    // Total videos count karo jo user ne upload kiye hain
-    const totalVideos = await Video.countDocuments({ owner: userId });
-
-    // Total video views calculate karne ke liye aggregation pipeline
-    const totalViewsPipeline = [
-      {
-        $match: {
-          owner: new mongoose.Types.ObjectId(userId), // User ID se match karo
-        },
-      },
-      {
-        $group: {
-          _id: null, // Sab videos ko ek group mein combine kar do
-          totalViews: { $sum: '$views' }, // Views ka total sum calculate karo
-        },
-      },
-    ];
-
-    const totalviewsResult = await Video.aggregate(totalViewsPipeline);
-    const totalViews =
-      totalviewsResult.length > 0 ? totalviewsResult[0].totalViews : 0; // Agar result hai to views le lo, warna 0
-
-    // Total likes count karne ke liye aggregation pipeline
-    const totalLikesPipeline = [
-      {
-        $match: {
-          likedBy: new mongoose.Types.ObjectId(userId), // User ke likes find karo
-        },
-      },
-      {
-        $group: {
-          _id: null, // Sab likes ko combine karo
-          totalLikes: { $sum: 1 }, // Har like ka 1 count karo
-        },
-      },
-    ];
-
-    const totalLikesResult = await Like.aggregate(totalLikesPipeline);
-    const totalLikes =
-      totalLikesResult.length > 0 ? totalLikesResult[0].totalLikes : 0; // Agar result hai to total likes le lo, warna 0
-
-    // Total subscribers count karo
-    const totalSubscribers = await Subscription.countDocuments({
-      channel: userId, // Channel user ID ke hisaab se
-    });
-
-    // Success response bhejo with stats
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        { totalViews, totalVideos, totalLikes, totalSubscribers },
-        'Channel stats fetched successfully.' // Success message
-      )
-    );
-  } catch (error) {
-    console.error('Server error', error);
-    // Error response bhejo agar server error hai
-    return res.status(500).json(new ApiError(500, 'Server error'));
+  const cacheKey = `channel:${userId}:stats`;
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Stats fetched from cache'));
   }
+
+  const [totalVideos, totalViews, totalLikes, totalSubscribers] =
+    await Promise.all([
+      Video.countDocuments({ owner: userId }),
+      getTotalViews(userId),
+      getTotalLikes(userId),
+      Subscription.countDocuments({ channel: userId }),
+    ]);
+
+  const stats = { totalVideos, totalViews, totalLikes, totalSubscribers };
+
+  if (isRedisEnabled) await redisSet(cacheKey, stats, 300); // cache 5 mins
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, stats, 'Channel stats fetched successfully.'));
 });
 
-// Channel ke saare videos fetch karne ka function
+// GET ALL VIDEOS FOR A CHANNEL
 const getChannelVideos = asyncHandler(async (req, res) => {
-  try {
-    const { ownerId } = req.params; // Channel owner ka user ID le rahe hain
+  const { ownerId } = req.params;
+  if (!mongoose.isValidObjectId(ownerId))
+    throw new ApiError(400, 'Invalid owner ID');
 
-    // Videos find karne ke liye aggregation pipeline
-    const pipeline = [
-      {
-        $match: {
-          owner: new mongoose.Types.ObjectId(ownerId), // Owner ke hisaab se videos match karo
-        },
-      },
-      {
-        $project: {
-          _id: 1, // Video ID le rahe hain
-          title: 1, // Video ka title
-          description: 1, // Video ka description
-          videoFile: 1, // Video file ka URL
-        },
-      },
-    ];
-
-    const userVideos = await Video.aggregate(pipeline); // Pipeline ko execute karo aur videos fetch karo
-
-    // Success response bhejo with videos
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          { userVideos },
-          'User videos fetched successfully.'
-        )
-      );
-  } catch (error) {
-    console.error('Server error', error);
-    // Error response bhejo agar server error hai
-    return res.status(500).json(new ApiError(500, 'Server error'));
+  const cacheKey = `channel:${ownerId}:videos`;
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Videos fetched from cache'));
   }
+
+  const videos = await Video.find({ owner: ownerId })
+    .select('_id title description thumbnail videoFile createdAt')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (isRedisEnabled) await redisSet(cacheKey, videos, 300); // cache 5 mins
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, videos, 'User videos fetched successfully.'));
 });
 
 export { getChannelStats, getChannelVideos };

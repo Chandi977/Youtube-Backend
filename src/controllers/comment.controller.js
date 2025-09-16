@@ -3,137 +3,143 @@ import { Comment } from '../models/comment.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import {
+  redisGet,
+  redisSet,
+  redisDel,
+  isRedisEnabled,
+} from '../utils/upstash.js';
 
-// Video ke comments ko fetch karne wala function
+// ====================== Helpers ======================
+
+const formatCommentPipeline = (videoId, pageNum, limitNum) => [
+  { $match: { video: new mongoose.Types.ObjectId(videoId) } },
+  { $sort: { createdAt: -1 } },
+  { $skip: (pageNum - 1) * limitNum },
+  { $limit: limitNum },
+  {
+    $lookup: {
+      from: 'users',
+      localField: 'owner',
+      foreignField: '_id',
+      as: 'userDetails',
+    },
+  },
+  {
+    $project: {
+      _id: 1,
+      content: 1,
+      createdAt: 1,
+      user: { $arrayElemAt: ['$userDetails', 0] },
+    },
+  },
+];
+
+// ====================== Controllers ======================
+
+// GET COMMENTS FOR A VIDEO (with caching)
 const getVideoComments = asyncHandler(async (req, res) => {
-  try {
-    const { videoId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+  const { videoId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
 
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 10;
+  if (!mongoose.isValidObjectId(videoId))
+    throw new ApiError(400, 'Invalid video ID');
 
-    const pipeline = [
-      { $match: { video: new mongoose.Types.ObjectId(videoId) } },
-      { $sort: { createdAt: -1 } },
-      { $skip: (pageNum - 1) * limitNum },
-      { $limit: limitNum },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'owner',
-          foreignField: '_id',
-          as: 'userDetails',
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          content: 1,
-          createdAt: 1,
-          user: { $arrayElemAt: ['$userDetails', 0] },
-        },
-      },
-    ];
-
-    const comments = await Comment.aggregate(pipeline);
-
-    if (!comments.length) {
+  const cacheKey = `video:${videoId}:comments:page:${page}:limit:${limit}`;
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
       return res
         .status(200)
-        .json(new ApiResponse(200, [], 'No comments found for this video'));
-    }
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, comments, 'Comments successfully fetched.'));
-  } catch (error) {
-    console.error('Error in getVideoComments:', error);
-    return res.status(500).json(new ApiResponse(500, null, 'Server error'));
+        .json(new ApiResponse(200, cached, 'Comments fetched from cache'));
   }
+
+  const comments = await Comment.aggregate(
+    formatCommentPipeline(videoId, page, limit)
+  );
+
+  if (isRedisEnabled) await redisSet(cacheKey, comments, 300); // cache 5 mins
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, comments, 'Comments successfully fetched.'));
 });
 
-// Naya comment add karne ka function
+// ADD NEW COMMENT
 const addComment = asyncHandler(async (req, res) => {
-  try {
-    const { content, video, owner } = req.body;
+  const { content, video } = req.body;
+  const owner = req.user._id;
 
-    // Comment create kar rahe hain
-    const comment = await Comment.create({
-      content,
-      video,
-      owner,
-    });
+  if (!content?.trim())
+    throw new ApiError(400, 'Comment content cannot be empty');
 
-    return res
-      .status(200)
-      .json(new ApiResponse(200, comment, 'Comment added successfully.'));
-  } catch (error) {
-    console.error('Error aya hai add Comment krne pe: ', error);
-    return res
-      .status(500)
-      .json(new ApiResponse(500, error, 'Kuch to gadbad hai server mai.'));
+  const comment = await Comment.create({
+    content: content.trim(),
+    video,
+    owner,
+  });
+
+  // Invalidate comment cache for this video
+  if (isRedisEnabled) {
+    const keysToInvalidate = [`video:${video}:comments:*`]; // pattern-based invalidation recommended via job
+    keysToInvalidate.forEach(async (keyPattern) => await redisDel(keyPattern));
   }
+
+  res
+    .status(201)
+    .json(new ApiResponse(201, comment, 'Comment added successfully.'));
 });
 
-// Existing comment ko update karne ka function
+// UPDATE COMMENT
 const updateComment = asyncHandler(async (req, res) => {
-  try {
-    const { commentId, updateContent } = req.body;
-    console.log(commentId, updateContent, req.body);
-    // Comment find karo by ID
-    const comment = await Comment.findById(commentId);
-    if (!comment) {
-      throw new ApiError(404, 'Comment not found'); // Agar comment nahi milta to error throw karo
-    }
+  const { commentId, updateContent } = req.body;
+  if (!mongoose.isValidObjectId(commentId))
+    throw new ApiError(400, 'Invalid comment ID');
 
-    // Comment ka content update karo
-    comment.content = updateContent;
-    await comment.save({ validateBeforeSave: false }); // Validation ke bina save karo
+  const comment = await Comment.findById(commentId);
+  if (!comment) throw new ApiError(404, 'Comment not found');
 
-    return res
-      .status(200)
-      .json(new ApiResponse(200, comment, 'Comment updated successfully.'));
-  } catch (error) {
-    console.error('Error aya hai update comment krne pe: ', error);
-    return res.status(500).json(new ApiResponse(500, error, 'Server fata'));
-  }
+  // Only owner can update
+  if (comment.owner.toString() !== req.user._id.toString())
+    throw new ApiError(403, 'Not authorized to update this comment');
+
+  if (!updateContent?.trim())
+    throw new ApiError(400, 'Content cannot be empty');
+  comment.content = updateContent.trim();
+  await comment.save({ validateBeforeSave: false });
+
+  // Invalidate Redis cache for the video
+  if (isRedisEnabled)
+    await redisDel(`video:${comment.video.toString()}:comments:*`);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, comment, 'Comment updated successfully.'));
 });
 
-// Comment delete karne ka function
+// DELETE COMMENT
 const deleteComment = asyncHandler(async (req, res) => {
-  try {
-    const { commentId } = req.body;
-    const userId = req.user._id; // Assuming userId JWT se aa rha hai
-    // console.log(userId);
-    // Comment find karo by ID
-    const comment = await Comment.findById(commentId);
-    if (!comment) {
-      throw new ApiError(404, 'Comment not found'); // Agar comment nahi milta to error throw karo
-    }
+  const { commentId } = req.body;
+  if (!mongoose.isValidObjectId(commentId))
+    throw new ApiError(400, 'Invalid comment ID');
 
-    // Agar comment ka owner user nahi hai to error throw karo
-    if (comment.owner.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json(
-          new ApiResponse(
-            403,
-            null,
-            'Ap jis comment ko delete krna chate hai woh apka nhi hai'
-          )
-        );
-    }
+  const comment = await Comment.findById(commentId);
+  if (!comment) throw new ApiError(404, 'Comment not found');
 
-    await Comment.deleteOne({ _id: commentId }); // Comment delete karo
+  // Only owner can delete
+  if (comment.owner.toString() !== req.user._id.toString())
+    throw new ApiError(403, 'Not authorized to delete this comment');
 
-    return res
-      .status(200)
-      .json(new ApiResponse(200, null, 'Comment deleted successfully.'));
-  } catch (error) {
-    console.error('Dekho kuch to Server mai glti hai:', error);
-    return res.status(500).json(new ApiResponse(500, error, 'Server fata'));
-  }
+  await comment.deleteOne();
+
+  // Invalidate Redis cache for the video
+  if (isRedisEnabled)
+    await redisDel(`video:${comment.video.toString()}:comments:*`);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, null, 'Comment deleted successfully.'));
 });
 
 export { getVideoComments, addComment, updateComment, deleteComment };
