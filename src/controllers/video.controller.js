@@ -16,6 +16,7 @@ import {
   redisSMembers,
   redisDel,
   isRedisEnabled,
+  redisSRem,
 } from '../utils/upstash.js';
 
 // ====================== Helpers ======================
@@ -65,21 +66,32 @@ const getAllVideos = asyncHandler(async (req, res) => {
     sortType = 'desc',
     isPublished,
   } = req.query;
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
 
   const cacheKey = `videos:all:${pageNum}:${limitNum}:${searchQuery || ''}:${sortBy}:${sortType}:${isPublished || ''}`;
-  if (isRedisEnabled) {
-    const cached = await redisGet(cacheKey);
-    if (cached)
-      return res.status(200).json({ success: true, data: JSON.parse(cached) });
+
+  // ✅ Check cache first
+  const cached = await redisGet(cacheKey);
+  if (cached) {
+    return res.status(200).json({
+      success: true,
+      message: 'Videos fetched from cache',
+      data: cached,
+    });
   }
 
+  // Build query
   const matchCriteria = {};
-  if (searchQuery) matchCriteria.title = { $regex: searchQuery, $options: 'i' };
-  if (isPublished !== undefined)
+  if (searchQuery) {
+    matchCriteria.title = { $regex: searchQuery, $options: 'i' };
+  }
+  if (isPublished !== undefined) {
     matchCriteria.isPublished = isPublished === 'true';
+  }
 
+  // Fetch from DB
   const videos = await Video.find(matchCriteria)
     .populate('owner', 'username fullName avatar')
     .sort({ [sortBy]: sortType === 'asc' ? 1 : -1 })
@@ -87,11 +99,15 @@ const getAllVideos = asyncHandler(async (req, res) => {
     .limit(limitNum)
     .lean();
 
-  if (!videos.length)
-    return res
-      .status(404)
-      .json({ success: false, message: 'No videos found', data: [] });
+  if (!videos.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No videos found',
+      data: [],
+    });
+  }
 
+  // Format + paginate
   const formattedVideos = videos.map(formatVideo);
   const totalVideos = await Video.countDocuments(matchCriteria);
 
@@ -102,7 +118,10 @@ const getAllVideos = asyncHandler(async (req, res) => {
     limit: limitNum,
   };
 
-  if (isRedisEnabled) await redisSet(cacheKey, response, 300); // cache 5 mins
+  // ✅ Save in Redis (always stringify)
+  if (isRedisEnabled) {
+    await redisSet(cacheKey, response, 300); // cache for 5 mins
+  }
 
   res.status(200).json({
     success: true,
@@ -158,8 +177,7 @@ const getVideoById = asyncHandler(async (req, res) => {
 
   if (isRedisEnabled) {
     const cached = await redisGet(cacheKey);
-    if (cached)
-      return res.status(200).json({ success: true, data: JSON.parse(cached) });
+    if (cached) return res.status(200).json({ success: true, data: cached });
   }
 
   const video = await Video.findById(videoId).populate(
@@ -181,10 +199,8 @@ const getVideosByUser = asyncHandler(async (req, res) => {
   if (!isValidObjectId(userId)) throw new ApiError(400, 'Invalid user ID');
 
   const cacheKey = `user:${userId}:videos`;
-  if (isRedisEnabled) {
-    const cached = await redisGet(cacheKey);
-    if (cached) return res.status(200).json({ success: true, data: cached });
-  }
+  const cached = await redisGet(cacheKey);
+  if (cached) return res.status(200).json({ success: true, data: cached });
 
   const videos = await Video.find({ owner: userId })
     .select('_id title thumbnail likesCount viewsCount createdAt')

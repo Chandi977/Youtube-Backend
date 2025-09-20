@@ -1,25 +1,50 @@
 import dotenv from 'dotenv';
-
 import connectDB from './config/index.js';
-import app from './app.js';
+import { server } from './app.js'; // Import server instead of app
+import logger from './utils/logger.js';
 
-// Load environment variables from the .env file located at the root of the project
+// Load environment variables
 dotenv.config({
-  path: './.env', // Path to the .env file
+  path: './.env',
 });
 
-// Connect to the MongoDB database and start the server if successful
+const PORT = process.env.PORT || 8000;
+
+// Connect to database and start server
 connectDB()
   .then(() => {
-    // Start the Express server on the port defined in environment variables or default to 8000
-    app.listen(process.env.PORT || 8000, () => {
-      console.log(`Server is running at port : ${process.env.PORT}`);
+    server.listen(PORT, () => {
+      logger.info(`⚙️ Server is running at port: ${PORT}`);
+      logger.info(`🚀 Socket.IO server is ready for real-time connections`);
+      logger.info(`🎥 Live streaming feature is now available`);
+    });
+
+    server.on('error', (error) => {
+      logger.error('❌ Server connection error:', error);
+      throw error;
     });
   })
-  .catch((err) => {
-    // Log an error message if the connection to MongoDB fails
-    console.log('MONGO DB CONNECTION FAILED!!!', err);
+  .catch((error) => {
+    logger.error('❌ MongoDB connection failed:', error);
+    process.exit(1);
   });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('👋 SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    logger.info('✅ Process terminated');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('👋 SIGINT received, shutting down gracefully');
+  server.close(() => {
+    logger.info('✅ Process terminated');
+    process.exit(0);
+  });
+});
 
 // Below is a commented-out example of a more basic setup for MongoDB and Express
 /*

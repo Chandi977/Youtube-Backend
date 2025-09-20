@@ -10,34 +10,54 @@ import xssClean from 'xss-clean';
 import mongoSanitize from 'express-mongo-sanitize';
 import compression from 'compression';
 import fetch from 'node-fetch';
+import { createServer } from 'http';
 
 import { syncLikes } from './workers/syncLikes.js';
 import logger, { requestLogger } from './utils/logger.js';
 import { isRedisEnabled } from './utils/upstash.js';
-// console.log('[DEBUG] isRedisEnabled:', isRedisEnabled);
 import errorHandler from './middlewares/errorHandler.middleware.js';
-
-// Load env
+import { initializeSocket } from './socket/socketHandler.js';
 
 const app = express();
-// console.log(app);
+
+// Create HTTP server for Socket.IO
+const server = createServer(app);
+
+// Initialize Socket.IO
+const io = initializeSocket(server);
+
+// Make io available in requests for live streaming
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // ------------------------
 // Security middlewares
 // ------------------------
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'connect-src': ["'self'", 'ws:', 'wss:'], // Allow WebSocket connections
+      },
+    },
+  })
+);
 app.use(hpp());
 app.use(xssClean());
 app.use(mongoSanitize());
 app.use(compression());
 
 // ------------------------
-// CORS
+// CORS (Updated for Socket.IO)
 // ------------------------
 const allowedOrigins = [
   process.env.CORS_ORIGIN || 'http://localhost:3000',
   'https://youtube-frontend.vercel.app',
 ];
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -65,20 +85,26 @@ app.use(express.static('public'));
 app.use(requestLogger);
 
 // ------------------------
-// Rate Limiter
+// Rate Limiter (Updated for live streaming)
 // ------------------------
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, try again later',
-  },
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 60 * 1000,
+//   max: 200, // Increased for live streaming features
+//   message: {
+//     success: false,
+//     message: 'Too many requests from this IP, try again later',
+//   },
+//   skip: (req) => {
+//     // Skip rate limiting for socket.io and live streaming endpoints
+//     return (
+//       req.url.startsWith('/socket.io') || req.url.includes('/livestreams/')
+//     );
+//   },
+// });
+// app.use(limiter);
 
 // ------------------------
-// Routes
+// Routes (Existing + New)
 // ------------------------
 import userRouter from './routes/user.routes.js';
 import healthcheckRouter from './routes/healthcheck.routes.js';
@@ -89,7 +115,9 @@ import playlistRouter from './routes/playlist.routes.js';
 import dashboardRouter from './routes/dashboard.routes.js';
 import Subscription from './routes/subscription.routes.js';
 import upstashRoutes from './routes/upstash.routes.js';
+import liveStreamRouter from './routes/livestream.routes.js'; // New live streaming routes
 
+// Existing routes
 app.use('/api/v1/healthcheck', healthcheckRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/videos', videoRouter);
@@ -100,7 +128,8 @@ app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/subscriptions', Subscription);
 app.use('/api/v1', upstashRoutes);
 
-// console.log(healthcheckRouter);
+// New live streaming routes
+app.use('/api/v1/livestreams', liveStreamRouter);
 
 // ------------------------
 // Global Error Handler
@@ -135,6 +164,5 @@ setInterval(async () => {
   }
 }, HEART_TICKER_INTERVAL);
 
-// console.log('[DEBUG] app.js loaded successfully');
-
-export default app;
+// Export both app and server
+export { app, server };

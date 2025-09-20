@@ -1,15 +1,10 @@
 // src/controllers/user.controller.js
 
-// Auth-related controllers
+// Auth & Profile controllers
 import * as AuthController from './User/auth.controllers.js';
-
-// Profile-related controllers
 import * as ProfileController from './User/profile.controllers.js';
 
-// Feed-related controllers
-// import * as FeedController from './User/feed.controllers.js';
-
-// Export all controllers as named exports
+// Named exports from auth & profile
 export const {
   registerUser,
   loginUser,
@@ -26,6 +21,7 @@ export const {
   getUserChannelProfile,
 } = ProfileController;
 
+// Models & utils
 import { User } from '../models/user.model.js';
 import { Video } from '../models/video.model.js';
 import { View } from '../models/view.model.js';
@@ -34,10 +30,34 @@ import { Subscription } from '../models/subscription.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
 
-// Get feed for current user based on subscriptions
+// ====================== Helpers ======================
+
+// Add views count to videos
+const addViewsCount = async (videos) => {
+  return await Promise.all(
+    videos.map(async (video) => {
+      const views = await View.countDocuments({ video: video._id });
+      return { ...video.toObject(), views };
+    })
+  );
+};
+
+// ====================== Controllers ======================
+
+// Get feed for current user
 const getFeed = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:feed`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Feed fetched from cache'));
+  }
 
   const subscriptions = await Subscription.find({ subscriber: userId }).select(
     'channel'
@@ -48,31 +68,36 @@ const getFeed = asyncHandler(async (req, res) => {
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  // Add views count to each video
-  const videosWithViews = await Promise.all(
-    videos.map(async (video) => {
-      const views = await View.countDocuments({ video: video._id });
-      return { ...video.toObject(), views };
-    })
-  );
+  const videosWithViews = await addViewsCount(videos);
+
+  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 300);
 
   res
     .status(200)
     .json(new ApiResponse(200, videosWithViews, 'Feed fetched successfully'));
 });
 
-// Get recommended videos (latest videos)
+// Get recommended videos
 const recommendedVideos = asyncHandler(async (req, res) => {
+  const cacheKey = 'videos:recommended';
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(
+          new ApiResponse(200, cached, 'Recommended videos fetched from cache')
+        );
+  }
+
   const videos = await Video.find()
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  const videosWithViews = await Promise.all(
-    videos.map(async (video) => {
-      const views = await View.countDocuments({ video: video._id });
-      return { ...video.toObject(), views };
-    })
-  );
+  const videosWithViews = await addViewsCount(videos);
+
+  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 300);
 
   res
     .status(200)
@@ -87,17 +112,31 @@ const recommendedVideos = asyncHandler(async (req, res) => {
 
 // Get user's watch history
 const getWatchHistory = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).populate({
+  const userId = req.user._id;
+  const cacheKey = `user:${userId}:watchHistory`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Watch history fetched from cache'));
+  }
+
+  const user = await User.findById(userId).populate({
     path: 'watchHistory',
     populate: { path: 'owner', select: 'fullName username avatar' },
   });
 
-  if (!user || !user.watchHistory.length) {
-    throw new ApiError(404, 'No watch history found');
-  }
+  if (!user) throw new ApiError(404, 'User not found');
 
-  // Get views count for each video in watch history
+  if (!user.watchHistory.length)
+    return res
+      .status(200)
+      .json(new ApiResponse(200, [], 'No watch history found'));
+
   const videoIds = user.watchHistory.map((video) => video._id);
+
   const videoViews = await Video.aggregate([
     { $match: { _id: { $in: videoIds } } },
     {
@@ -113,11 +152,10 @@ const getWatchHistory = asyncHandler(async (req, res) => {
 
   const watchHistory = user.watchHistory.map((video) => {
     const videoWithViews = videoViews.find((v) => v._id.equals(video._id));
-    return {
-      ...video.toObject(),
-      likesCount: videoWithViews?.likesCount || 0,
-    };
+    return { ...video.toObject(), likesCount: videoWithViews?.likesCount || 0 };
   });
+
+  if (isRedisEnabled) await redisSet(cacheKey, watchHistory, 300);
 
   res
     .status(200)
@@ -126,9 +164,18 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     );
 });
 
-// Get liked videos for current user
+// Get liked videos
 const getLikedVideos = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:likedVideos`;
+
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(new ApiResponse(200, cached, 'Liked videos fetched from cache'));
+  }
 
   const likes = await Like.find({
     likedBy: userId,
@@ -138,22 +185,26 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     populate: { path: 'owner', select: 'username fullName avatar' },
   });
 
-  const likedVideos = likes.map((like) => ({
-    video: {
-      _id: like.video._id,
-      title: like.video.title,
-      description: like.video.description,
-      duration: like.video.duration,
-      views: like.video.views,
-      thumbnail: like.video.thumbnail,
-    },
-    channel: {
-      _id: like.video.owner._id,
-      username: like.video.owner.username,
-      fullName: like.video.owner.fullName,
-      avatar: like.video.owner.avatar,
-    },
-  }));
+  const likedVideos = likes
+    .filter((like) => like.video && like.video.owner) // only keep valid ones
+    .map((like) => ({
+      video: {
+        _id: like.video._id,
+        title: like.video.title,
+        description: like.video.description,
+        duration: like.video.duration,
+        views: like.video.views,
+        thumbnail: like.video.thumbnail,
+      },
+      channel: {
+        _id: like.video.owner._id,
+        username: like.video.owner.username,
+        fullName: like.video.owner.fullName,
+        avatar: like.video.owner.avatar,
+      },
+    }));
+
+  if (isRedisEnabled) await redisSet(cacheKey, likedVideos, 300);
 
   res
     .status(200)
@@ -168,7 +219,7 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     );
 });
 
-// Get complete user view history
+// Get complete user view history (no caching)
 const getHistory = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
@@ -212,10 +263,25 @@ const getHistory = asyncHandler(async (req, res) => {
     );
 });
 
+// Recommend channels
 const recommendChannels = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+  const cacheKey = `user:${userId}:recommendedChannels`;
 
-  // Exclude current user
+  if (isRedisEnabled) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res
+        .status(200)
+        .json(
+          new ApiResponse(
+            200,
+            cached,
+            'Recommended channels fetched from cache'
+          )
+        );
+  }
+
   const channels = await User.find({ _id: { $ne: userId } })
     .select('username avatar channelDescription')
     .limit(10);
@@ -239,6 +305,8 @@ const recommendChannels = asyncHandler(async (req, res) => {
       };
     })
   );
+
+  if (isRedisEnabled) await redisSet(cacheKey, channelsWithData, 300);
 
   res
     .status(200)
