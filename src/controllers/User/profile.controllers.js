@@ -64,14 +64,18 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
   const avatarPath = req.file?.path;
   if (!avatarPath) throw new ApiError(400, 'Avatar file missing');
 
+  const user = await User.findById(req.user._id);
+  if (!user) throw new ApiError(404, 'User not found');
+
+  // Delete old avatar if exists
+  if (user.avatar) await deleteFromCloudinary(user.avatar);
+
+  // Upload new avatar
   const avatar = await uploadOnCloudinary(avatarPath);
   if (!avatar?.url) throw new ApiError(500, 'Avatar upload failed');
 
-  const user = await User.findByIdAndUpdate(
-    req.user._id,
-    { $set: { avatar: avatar.url } },
-    { new: true }
-  ).select('-password -refreshToken');
+  user.avatar = avatar.url;
+  await user.save({ validateBeforeSave: false });
 
   // Invalidate cache
   if (isRedisEnabled) await redisDel(`user:${req.user._id}:profile`);
