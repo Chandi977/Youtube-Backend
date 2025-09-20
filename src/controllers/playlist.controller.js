@@ -33,6 +33,7 @@ const createPlaylist = asyncHandler(async (req, res) => {
 });
 
 // --------------------- Get User Playlists ---------------------
+// --------------------- Get User Playlists ---------------------
 const getUserPlaylists = asyncHandler(async (req, res) => {
   const { userId } = req.params;
 
@@ -41,12 +42,11 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
   // Check cache first
   if (isRedisEnabled) {
     const cached = await redisGet(`user:${userId}:playlists`);
-    if (cached)
+    if (cached) {
       return res
         .status(200)
-        .json(
-          new ApiResponse(200, JSON.parse(cached), 'User playlists fetched')
-        );
+        .json(new ApiResponse(200, cached, 'User playlists fetched (cached)'));
+    }
   }
 
   const playlists = await Playlist.find({ owner: userId })
@@ -55,7 +55,7 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
 
   // Cache the result
   if (isRedisEnabled) {
-    await redisSet(`user:${userId}:playlists`, JSON.stringify(playlists));
+    await redisSet(`user:${userId}:playlists`, playlists);
   }
 
   res
@@ -73,10 +73,11 @@ const getPlaylistById = asyncHandler(async (req, res) => {
   // Check cache first
   if (isRedisEnabled) {
     const cached = await redisGet(`playlist:${playlistId}`);
-    if (cached)
+    if (cached) {
       return res
         .status(200)
-        .json(new ApiResponse(200, JSON.parse(cached), 'Playlist fetched'));
+        .json(new ApiResponse(200, cached, 'Playlist fetched (cached)'));
+    }
   }
 
   const playlist = await Playlist.findById(playlistId).populate(
@@ -88,7 +89,7 @@ const getPlaylistById = asyncHandler(async (req, res) => {
 
   // Cache the playlist
   if (isRedisEnabled) {
-    await redisSet(`playlist:${playlistId}`, JSON.stringify(playlist));
+    await redisSet(`playlist:${playlistId}`, playlist);
   }
 
   res

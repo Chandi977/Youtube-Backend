@@ -43,29 +43,36 @@ const getVideoComments = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
 
-  if (!mongoose.isValidObjectId(videoId))
+  if (!mongoose.isValidObjectId(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
+  }
 
   const cacheKey = `video:${videoId}:comments:page:${page}:limit:${limit}`;
+
   if (isRedisEnabled) {
     const cached = await redisGet(cacheKey);
-    if (cached)
+    if (cached) {
       return res
         .status(200)
         .json(new ApiResponse(200, cached, 'Comments fetched from cache'));
+    }
   }
 
-  const comments = await Comment.aggregate(
-    formatCommentPipeline(videoId, page, limit)
-  );
+  // Fetch comments with owner populated
+  const comments = await Comment.find({ video: videoId })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .populate('owner', 'username avatar'); // populate owner info
 
-  if (isRedisEnabled) await redisSet(cacheKey, comments, 300); // cache 5 mins
+  if (isRedisEnabled) {
+    await redisSet(cacheKey, comments, 300); // cache for 5 mins
+  }
 
   res
     .status(200)
     .json(new ApiResponse(200, comments, 'Comments successfully fetched.'));
 });
-
 // ADD NEW COMMENT
 const addComment = asyncHandler(async (req, res) => {
   const { content, video } = req.body;
