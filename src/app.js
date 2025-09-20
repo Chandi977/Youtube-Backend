@@ -87,21 +87,21 @@ app.use(requestLogger);
 // ------------------------
 // Rate Limiter (Updated for live streaming)
 // ------------------------
-// const limiter = rateLimit({
-//   windowMs: 60 * 1000,
-//   max: 200, // Increased for live streaming features
-//   message: {
-//     success: false,
-//     message: 'Too many requests from this IP, try again later',
-//   },
-//   skip: (req) => {
-//     // Skip rate limiting for socket.io and live streaming endpoints
-//     return (
-//       req.url.startsWith('/socket.io') || req.url.includes('/livestreams/')
-//     );
-//   },
-// });
-// app.use(limiter);
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200, // Increased for live streaming features
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, try again later',
+  },
+  skip: (req) => {
+    // Skip rate limiting for socket.io and live streaming endpoints
+    return (
+      req.url.startsWith('/socket.io') || req.url.includes('/livestreams/')
+    );
+  },
+});
+app.use(limiter);
 
 // ------------------------
 // Routes (Existing + New)
