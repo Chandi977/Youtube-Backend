@@ -53,10 +53,7 @@ app.use(compression());
 // ------------------------
 // CORS (Updated for Socket.IO)
 // ------------------------
-const allowedOrigins = [
-  process.env.CORS_ORIGIN || 'http://localhost:3000',
-  'https://youtube-frontend.vercel.app',
-];
+const allowedOrigins = [process.env.CORS_ORIGIN || 'http://localhost:5173'];
 
 app.use(
   cors({
