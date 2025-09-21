@@ -2,8 +2,12 @@ import { Router } from 'express';
 import passport from 'passport';
 
 const router = Router();
+const FRONTEND_URL =
+  process.env.NODE_ENV === 'production'
+    ? process.env.FRONTEND_PROD_URL
+    : process.env.FRONTEND_DEV_URL;
 
-// --------- Google OAuth ---------
+// -------- Google OAuth --------
 router.get(
   '/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
@@ -16,13 +20,12 @@ router.get(
     failureRedirect: '/login',
   }),
   (req, res) => {
-    // Send JWT token to frontend via query or redirect
     const token = req.user.token;
-    res.redirect(`${process.env.FRONTEND_URL}/oauth-success?token=${token}`);
+    res.redirect(`${FRONTEND_URL}/oauth-success?token=${token}`);
   }
 );
 
-// --------- GitHub OAuth ---------
+// -------- GitHub OAuth --------
 router.get(
   '/github',
   passport.authenticate('github', { scope: ['user:email'] })
@@ -36,7 +39,7 @@ router.get(
   }),
   (req, res) => {
     const token = req.user.token;
-    res.redirect(`${process.env.FRONTEND_URL}/oauth-success?token=${token}`);
+    res.redirect(`${FRONTEND_URL}/oauth-success?token=${token}`);
   }
 );
 

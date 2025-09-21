@@ -18,6 +18,9 @@ import { isRedisEnabled } from './utils/upstash.js';
 import errorHandler from './middlewares/errorHandler.middleware.js';
 import { initializeSocket } from './socket/socketHandler.js';
 
+import passport from 'passport';
+import './config/passport.js'; // Your Passport strategies
+
 const app = express();
 
 // Create HTTP server for Socket.IO
@@ -31,6 +34,7 @@ app.use((req, res, next) => {
   req.io = io;
   next();
 });
+app.use(passport.initialize());
 
 // ------------------------
 // Security middlewares
