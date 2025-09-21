@@ -41,10 +41,20 @@ const userSchema = new Schema(
     ],
     password: {
       type: String, // Field type is String
-      required: [true, 'Password is required'], // Custom error message if the field is missing
+      // Password is not required for OAuth users
     },
     refreshToken: {
       type: String, // Field type is String for storing refresh token
+    },
+    oauthProvider: {
+      type: String,
+      enum: ['google', 'github', 'local'],
+      default: 'local',
+    },
+    oauthId: {
+      type: String,
+      unique: true,
+      sparse: true, // a sparse index doesn't index documents that have a null value for the field
     },
   },
   { timestamps: true } // Adding timestamps (createdAt and updatedAt) to the schema
