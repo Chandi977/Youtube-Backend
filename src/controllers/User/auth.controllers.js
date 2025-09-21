@@ -98,6 +98,8 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 // LOGIN
+const isProduction = process.env.NODE_ENV === 'production';
+
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
   if (!username && !email)
@@ -116,12 +118,19 @@ const loginUser = asyncHandler(async (req, res) => {
   const loggedInUser = await User.findById(user._id).select(
     '-password -refreshToken'
   );
-  const options = { httpOnly: true, secure: true };
+
+  // ✅ Environment-aware cookie options
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction, // HTTPS only in production
+    sameSite: isProduction ? 'none' : 'lax', // Allow cross-origin in prod
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
 
   res
     .status(200)
-    .cookie('accessToken', accessToken, options)
-    .cookie('refreshToken', refreshToken, options)
+    .cookie('accessToken', accessToken, cookieOptions)
+    .cookie('refreshToken', refreshToken, cookieOptions)
     .json(
       new ApiResponse(
         200,
