@@ -100,6 +100,14 @@ const registerUser = asyncHandler(async (req, res) => {
 // LOGIN
 const isProduction = process.env.NODE_ENV === 'production';
 
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  // domain: isProduction ? ".yourdomain.com" : undefined, // only if same root domain
+};
+
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
   if (!username && !email)
@@ -119,14 +127,6 @@ const loginUser = asyncHandler(async (req, res) => {
     '-password -refreshToken'
   );
 
-  // ✅ Environment-aware cookie options
-  const cookieOptions = {
-    httpOnly: true,
-    secure: isProduction, // HTTPS only in production
-    sameSite: isProduction ? 'none' : 'lax', // Allow cross-origin in prod
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  };
-
   res
     .status(200)
     .cookie('accessToken', accessToken, cookieOptions)
@@ -144,11 +144,11 @@ const loginUser = asyncHandler(async (req, res) => {
 const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(req.user._id, { refreshToken: undefined });
   if (isRedisEnabled) await redisDel(`user:${req.user._id}:profile`);
-  const options = { httpOnly: true, secure: true };
+
   res
     .status(200)
-    .clearCookie('accessToken', options)
-    .clearCookie('refreshToken', options)
+    .clearCookie('accessToken', cookieOptions)
+    .clearCookie('refreshToken', cookieOptions)
     .json(new ApiResponse(200, {}, 'Logout successful'));
 });
 
@@ -162,6 +162,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     incomingRefreshToken,
     process.env.REFRESH_TOKEN_SECRET
   );
+
   const user = await User.findById(decoded._id);
   if (!user || user.refreshToken !== incomingRefreshToken)
     throw new ApiError(401, 'Invalid or expired token');
@@ -169,11 +170,11 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
-  const options = { httpOnly: true, secure: true };
+
   res
     .status(200)
-    .cookie('accessToken', accessToken, options)
-    .cookie('refreshToken', refreshToken, options)
+    .cookie('accessToken', accessToken, cookieOptions)
+    .cookie('refreshToken', refreshToken, cookieOptions)
     .json(
       new ApiResponse(
         200,
