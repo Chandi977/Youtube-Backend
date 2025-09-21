@@ -6,8 +6,8 @@ const router = Router();
 // Determine the frontend URL and fail fast if it's not set.
 const FRONTEND_URL =
   process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_PROD_URL
-    : process.env.FRONTEND_DEV_URL || 'http://localhost:5173';
+    ? process.env.FRONTEND_URL
+    : process.env.FRONTEND_URL || 'http://localhost:5173';
 
 if (!FRONTEND_URL) {
   throw new Error(
