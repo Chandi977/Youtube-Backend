@@ -1,39 +1,82 @@
-import { asyncHandler } from '../utils/asyncHandler.js'; // Importing asyncHandler utility to handle async errors in middleware.
-import { ApiError } from '../utils/ApiError.js'; // Importing ApiError class for consistent error handling.
-import jwt from 'jsonwebtoken'; // Importing jsonwebtoken to verify JWTs.
-import { User } from '../models/user.model.js'; // Importing the User model to query user data from the database.
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { ApiError } from '../utils/ApiError.js';
+import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
+import fetch from 'node-fetch';
+import { User } from '../models/user.model.js';
 
-// Middleware to verify the JWT token and authenticate the user
+// Google OAuth client
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 export const verifyJWT = asyncHandler(async (req, res, next) => {
+  const token =
+    req.cookies?.accessToken ||
+    req.header('Authorization')?.replace('Bearer ', '');
+
+  if (!token) throw new ApiError(401, 'Unauthorized request');
+
+  let user;
+
   try {
-    // Extracting the token from cookies or Authorization header
-    const token =
-      req.cookies?.accessToken || // Try to get the access token from cookies
-      req.header('Authorization')?.replace('Bearer ', ''); // If not in cookies, try to get it from Authorization header
+    // --- Try verifying our own JWT first ---
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
-    // If no token is found, throw an unauthorized error
-    if (!token) {
-      throw new ApiError(401, 'Unauthorized request');
-    }
+    const userId = decoded.id || decoded._id;
+    if (!userId) throw new ApiError(401, 'Invalid token payload');
 
-    // Verifying the token with the secret key from environment variables
-    const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    user = await User.findById(userId).select('-password -refreshToken');
+    if (!user) throw new ApiError(401, 'User not found');
 
-    // Querying the database for the user with the decoded token's ID, excluding password and refreshToken from the result
-    const user = await User.findById(decodedToken?._id).select(
-      '-password -refreshToken'
-    );
-
-    // If no user is found with the provided token, throw an invalid access token error
-    if (!user) {
-      throw new ApiError(401, 'Invalid Access Token');
-    }
-
-    // Attaching the found user to the request object for further use in subsequent middleware/routes
     req.user = user;
-    next(); // Proceed to the next middleware/route
-  } catch (error) {
-    // If any error occurs, throw an error with an appropriate message
-    throw new ApiError(401, error?.message || 'Invalid Access Token');
+    return next();
+  } catch (err) {
+    // If normal JWT fails, try OAuth tokens
+    try {
+      // --- Google OAuth JWT ---
+      const ticket = await googleClient.verifyIdToken({
+        idToken: token,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+
+      // Find or create user in DB
+      user = await User.findOne({ email: payload.email });
+      if (!user) {
+        user = await User.create({
+          username: payload.name,
+          email: payload.email,
+          avatar: payload.picture,
+          oauthProvider: 'google',
+        });
+      }
+
+      req.user = user;
+      return next();
+    } catch (googleErr) {
+      // --- GitHub OAuth (JWT is an access token) ---
+      try {
+        const githubResp = await fetch('https://api.github.com/user', {
+          headers: { Authorization: `token ${token}` },
+        });
+        if (!githubResp.ok) throw new Error('Invalid GitHub token');
+        const githubData = await githubResp.json();
+
+        user = await User.findOne({ githubId: githubData.id });
+        if (!user) {
+          user = await User.create({
+            username: githubData.login,
+            email: githubData.email,
+            avatar: githubData.avatar_url,
+            githubId: githubData.id,
+            oauthProvider: 'github',
+          });
+        }
+
+        req.user = user;
+        return next();
+      } catch (ghErr) {
+        throw new ApiError(401, 'Invalid Access Token (JWT or OAuth)');
+      }
+    }
   }
 });

@@ -10,13 +10,18 @@ import {
   redisDel,
   isRedisEnabled,
 } from '../utils/upstash.js';
+import {
+  uploadOnCloudinary,
+  deleteFromCloudinary,
+} from '../utils/cloudinary.js';
 
 // -------------------- CREATE TWEET OR REPLY --------------------
 const createTweet = asyncHandler(async (req, res) => {
   const { content, parentTweetId } = req.body;
   const owner = req.user.id;
 
-  if (!content?.trim()) throw new ApiError(400, 'Content cannot be empty');
+  if (!content?.trim() && !req.file)
+    throw new ApiError(400, 'Tweet must have text or image');
 
   let parentTweet = null;
   if (parentTweetId) {
@@ -26,13 +31,19 @@ const createTweet = asyncHandler(async (req, res) => {
     if (!parentTweet) throw new ApiError(404, 'Parent tweet not found');
   }
 
+  let imageUrl = null;
+  if (req.file) {
+    const uploaded = await uploadOnCloudinary(req.file.path, 'image');
+    imageUrl = uploaded.secure_url;
+  }
+
   const newTweet = await Tweet.create({
     content,
+    image: imageUrl,
     owner,
     parentTweet: parentTweetId || null,
   });
 
-  // Cache invalidation
   if (isRedisEnabled) {
     await redisDel(`user:${owner}:tweets`);
     if (parentTweetId) await redisDel(`tweet:${parentTweetId}:replies`);
@@ -120,6 +131,7 @@ const toggleLikeTweet = asyncHandler(async (req, res) => {
 });
 
 // -------------------- UPDATE TWEET --------------------
+
 const updateTweet = asyncHandler(async (req, res) => {
   const { tweetId, content } = req.body;
   const userId = req.user.id;
@@ -132,7 +144,20 @@ const updateTweet = asyncHandler(async (req, res) => {
   if (tweet.owner.toString() !== userId)
     throw new ApiError(403, 'You cannot edit this tweet');
 
+  // Update content
   if (content?.trim()) tweet.content = content.trim();
+
+  // Update image if new file uploaded
+  if (req.file) {
+    // Delete old image from Cloudinary
+    if (tweet.image) {
+      const publicId = tweet.image.split('/').slice(-1)[0].split('.')[0];
+      await deleteFromCloudinary(publicId, 'image');
+    }
+
+    const uploaded = await uploadOnCloudinary(req.file.path, 'image');
+    tweet.image = uploaded.secure_url;
+  }
 
   await tweet.save({ validateBeforeSave: false });
 
@@ -155,6 +180,12 @@ const deleteTweet = asyncHandler(async (req, res) => {
   if (tweet.owner.toString() !== userId)
     throw new ApiError(403, 'Cannot delete this tweet');
 
+  // Delete image from Cloudinary if exists
+  if (tweet.image) {
+    const publicId = tweet.image.split('/').slice(-1)[0].split('.')[0];
+    await deleteFromCloudinary(publicId, 'image');
+  }
+
   await Tweet.deleteOne({ _id: tweetId });
 
   // Cache invalidation
@@ -169,6 +200,33 @@ const deleteTweet = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, null, 'Tweet deleted successfully'));
 });
 
+// -------------------- SHARE / UNSHARE TWEET --------------------
+const toggleShareTweet = asyncHandler(async (req, res) => {
+  const { tweetId } = req.params;
+  const userId = req.user.id;
+
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  const tweet = await Tweet.findById(tweetId);
+  if (!tweet) throw new ApiError(404, 'Tweet not found');
+
+  const sharedIndex = tweet.shares.indexOf(userId);
+  let message = '';
+  if (sharedIndex === -1) {
+    tweet.shares.push(userId);
+    message = 'Tweet shared';
+  } else {
+    tweet.shares.splice(sharedIndex, 1);
+    message = 'Share removed';
+  }
+
+  await tweet.save();
+
+  if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, tweet);
+
+  return res.status(200).json(new ApiResponse(200, tweet, message));
+});
+
 export {
   createTweet,
   getUserTweets,
@@ -176,4 +234,5 @@ export {
   toggleLikeTweet,
   updateTweet,
   deleteTweet,
+  toggleShareTweet,
 };

@@ -283,14 +283,26 @@ const deleteVideo = asyncHandler(async (req, res) => {
 });
 
 // RECORD VIEW
+// RECORD VIEW (count unique logged-in user views)
 const recordView = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
+  const userId = req.user._id.toString();
+
   await getVideoOrFail(videoId);
 
   if (isRedisEnabled) {
-    await redisIncr(`video:${videoId}:views`);
-    await redisSAdd('videos:dirty', videoId); // for batch DB update
+    const userViewedKey = `video:${videoId}:viewed`;
+
+    // Add userId to set, returns 1 if new, 0 if already present
+    const added = await redisSAdd(userViewedKey, userId);
+
+    if (added) {
+      // First time this user views this video → increment
+      await redisIncr(`video:${videoId}:views`);
+      await redisSAdd('videos:dirty', videoId); // for batch DB sync
+    }
   } else {
+    // Fallback: naive increment (duplicates possible without Redis)
     await Video.findByIdAndUpdate(videoId, { $inc: { viewsCount: 1 } });
   }
 

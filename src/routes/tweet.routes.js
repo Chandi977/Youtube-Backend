@@ -6,12 +6,23 @@ import {
   updateTweet,
 } from '../controllers/tweet.controller.js';
 import { verifyJWT } from '../middlewares/auth.middleware.js';
+import { upload } from '../middlewares/multer.middleware.js';
 
 const router = Router();
-router.use(verifyJWT); // Apply verifyJWT middleware to all routes in this file
 
-router.route('/').post(createTweet);
-router.route('/user/:userId').get(getUserTweets);
-router.route('/:tweetId').patch(updateTweet).delete(deleteTweet);
+// Apply JWT middleware to all routes
+router.use(verifyJWT);
+
+// Create a tweet (text, image, or both)
+router.post('/', upload.single('image'), createTweet);
+
+// Get all tweets of a user (no image upload needed)
+router.get('/user/:userId', getUserTweets);
+
+// Update a tweet (content and/or image)
+router.patch('/:tweetId', upload.single('image'), updateTweet);
+
+// Delete a tweet
+router.delete('/:tweetId', deleteTweet);
 
 export default router;
