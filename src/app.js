@@ -53,15 +53,24 @@ app.use(compression());
 // ------------------------
 // CORS (Updated for Socket.IO)
 // ------------------------
-const allowedOrigins = [process.env.CORS_ORIGIN || 'http://localhost:5173'];
+// Split the env variable into an array and clean it
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+  : ['http://localhost:5173'];
+
+console.log('Allowed Origins:', allowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-      else callback(new Error('Not allowed by CORS'));
+      // Allow requests with no origin (like Postman) or matching allowed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
     },
-    credentials: true,
+    credentials: true, // important for cookies/auth
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'Accept-Ranges'],
     exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
