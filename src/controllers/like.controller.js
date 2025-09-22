@@ -17,9 +17,9 @@ import {
   redisSRem,
   isRedisEnabled,
 } from '../utils/upstash.js';
-import { getVideoOrFail } from './video.controller.js'; // Reuse helper
+import { getVideoOrFail } from './video.controller.js';
 
-// --------------------- Video Likes ---------------------
+/* ----------------------------- Toggle Video Like ----------------------------- */
 const toggleVideoLike = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const userId = req.user.id;
@@ -27,8 +27,8 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
   if (!isValidObjectId(videoId)) throw new ApiError(400, 'Invalid video ID');
   await getVideoOrFail(videoId);
 
-  const likeKey = `video:${videoId}:likes`; // total likes
-  const userKey = `user:${userId}:likedVideos`; // set of liked videos by user
+  const likeKey = `video:${videoId}:likes`;
+  const userKey = `user:${userId}:likedVideos`;
 
   let hasLiked = false;
 
@@ -40,7 +40,6 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
   }
 
   if (hasLiked) {
-    // UNLIKE
     if (isRedisEnabled) {
       await redisDecr(likeKey);
       await redisSRem(userKey, videoId);
@@ -49,9 +48,8 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
 
     return res
       .status(200)
-      .json(new ApiResponse(200, null, 'Video unliked successfully'));
+      .json(new ApiResponse(200, { liked: false }, 'Video unliked'));
   } else {
-    // LIKE
     if (isRedisEnabled) {
       await redisIncr(likeKey);
       await redisSAdd(userKey, videoId);
@@ -60,11 +58,11 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
 
     return res
       .status(201)
-      .json(new ApiResponse(201, null, 'Video liked successfully'));
+      .json(new ApiResponse(201, { liked: true }, 'Video liked'));
   }
 });
 
-// --------------------- Comment Likes ---------------------
+/* ----------------------------- Toggle Comment Like ----------------------------- */
 const toggleCommentLike = asyncHandler(async (req, res) => {
   const { commentId } = req.params;
   const userId = req.user.id;
@@ -81,7 +79,6 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
   const hasLiked = isRedisEnabled ? await redisGet(userKey) : null;
 
   if (hasLiked) {
-    // Remove like
     if (isRedisEnabled) {
       await redisDecr(likeKey);
       await redisDel(userKey);
@@ -90,9 +87,8 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
     }
     return res
       .status(200)
-      .json(new ApiResponse(200, {}, 'Disliked the comment.'));
+      .json(new ApiResponse(200, { liked: false }, 'Comment unliked'));
   } else {
-    // Add like
     if (isRedisEnabled) {
       await redisIncr(likeKey);
       await redisSet(userKey, '1');
@@ -101,11 +97,11 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
     }
     return res
       .status(201)
-      .json(new ApiResponse(201, {}, 'Liked comment successfully.'));
+      .json(new ApiResponse(201, { liked: true }, 'Comment liked'));
   }
 });
 
-// --------------------- Tweet Likes ---------------------
+/* ----------------------------- Toggle Tweet Like ----------------------------- */
 const toggleTweetLike = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
   const userId = req.user.id;
@@ -121,7 +117,6 @@ const toggleTweetLike = asyncHandler(async (req, res) => {
   const hasLiked = isRedisEnabled ? await redisGet(userKey) : null;
 
   if (hasLiked) {
-    // Remove like
     if (isRedisEnabled) {
       await redisDecr(likeKey);
       await redisDel(userKey);
@@ -130,9 +125,8 @@ const toggleTweetLike = asyncHandler(async (req, res) => {
     }
     return res
       .status(200)
-      .json(new ApiResponse(200, {}, 'Disliked the tweet.'));
+      .json(new ApiResponse(200, { liked: false }, 'Tweet unliked'));
   } else {
-    // Add like
     if (isRedisEnabled) {
       await redisIncr(likeKey);
       await redisSet(userKey, '1');
@@ -141,11 +135,67 @@ const toggleTweetLike = asyncHandler(async (req, res) => {
     }
     return res
       .status(201)
-      .json(new ApiResponse(201, {}, 'Liked tweet successfully.'));
+      .json(new ApiResponse(201, { liked: true }, 'Tweet liked'));
   }
 });
 
-// --------------------- Get liked videos for a user ---------------------
+/* ----------------------------- Fetch Like Counts ----------------------------- */
+
+// Fetch likes for a single video
+const getVideoLikes = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+  if (!isValidObjectId(videoId)) throw new ApiError(400, 'Invalid video ID');
+
+  let count = 0;
+  if (isRedisEnabled) {
+    count = parseInt((await redisGet(`video:${videoId}:likes`)) || '0');
+  } else {
+    count = await Like.countDocuments({ video: videoId });
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { videoId, count }, 'Video like count fetched'));
+});
+
+// Fetch likes for a single comment
+const getCommentLikes = asyncHandler(async (req, res) => {
+  const { commentId } = req.params;
+  if (!isValidObjectId(commentId))
+    throw new ApiError(400, 'Invalid comment ID');
+
+  let count = 0;
+  if (isRedisEnabled) {
+    count = parseInt((await redisGet(`comment:${commentId}:likes`)) || '0');
+  } else {
+    count = await Like.countDocuments({ comment: commentId });
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { commentId, count }, 'Comment like count fetched')
+    );
+});
+
+// Fetch likes for a single tweet
+const getTweetLikes = asyncHandler(async (req, res) => {
+  const { tweetId } = req.params;
+  if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
+
+  let count = 0;
+  if (isRedisEnabled) {
+    count = parseInt((await redisGet(`tweet:${tweetId}:likes`)) || '0');
+  } else {
+    count = await Like.countDocuments({ tweet: tweetId });
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { tweetId, count }, 'Tweet like count fetched'));
+});
+
+/* ----------------------------- Liked Videos ----------------------------- */
 const getLikedVideos = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
@@ -164,7 +214,6 @@ const getLikedVideos = asyncHandler(async (req, res) => {
       .select('_id title description owner viewsCount likesCount')
       .lean();
   } else {
-    // Fallback to MongoDB
     likedVideos = await Like.find({ video: { $ne: null }, likedBy: userId })
       .populate('video', '_id title description owner viewsCount likesCount')
       .lean();
@@ -173,7 +222,15 @@ const getLikedVideos = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, likedVideos, 'Liked videos retrieved.'));
+    .json(new ApiResponse(200, likedVideos, 'Liked videos retrieved'));
 });
 
-export { toggleVideoLike, toggleCommentLike, toggleTweetLike, getLikedVideos };
+export {
+  toggleVideoLike,
+  toggleCommentLike,
+  toggleTweetLike,
+  getLikedVideos,
+  getVideoLikes,
+  getCommentLikes,
+  getTweetLikes,
+};
