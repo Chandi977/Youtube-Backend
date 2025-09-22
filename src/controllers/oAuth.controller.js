@@ -1,9 +1,9 @@
-// src/controllers/auth.controller.js
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { User } from '../models/user.model.js';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import fetch from 'node-fetch'; // For GitHub API calls
+import { redisSet, isRedisEnabled } from '../utils/upstash.js'; // Redis helpers
 
 // ---------------- JWT UTIL ----------------
 const createJWT = (userId) =>
@@ -15,7 +15,7 @@ const createJWT = (userId) =>
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI // e.g., http://localhost:3000/api/v1/auth/google/callback
+  process.env.GOOGLE_REDIRECT_URI
 );
 
 export const googleOAuth = asyncHandler(async (req, res) => {
@@ -26,9 +26,10 @@ export const googleOAuth = asyncHandler(async (req, res) => {
   res.redirect(url);
 });
 
+// ---------------- GITHUB OAUTH ----------------
 export const githubOAuth = asyncHandler(async (req, res) => {
   const clientId = process.env.GITHUB_CLIENT_ID;
-  const redirectUri = process.env.GITHUB_REDIRECT_URI; // e.g., http://localhost:3000/api/v1/auth/github/callback
+  const redirectUri = process.env.GITHUB_REDIRECT_URI;
   const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=user:email`;
   res.redirect(url);
 });
@@ -39,6 +40,7 @@ export const oauthCallback = asyncHandler(async (req, res) => {
   const provider = req.path.includes('google') ? 'google' : 'github';
   let email, name, avatar;
 
+  // Fetch user info from provider
   if (provider === 'google') {
     const { tokens } = await googleClient.getToken(code);
     googleClient.setCredentials(tokens);
@@ -66,6 +68,7 @@ export const oauthCallback = asyncHandler(async (req, res) => {
         }),
       }
     );
+
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
@@ -73,6 +76,7 @@ export const oauthCallback = asyncHandler(async (req, res) => {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const userData = await userResponse.json();
+
     email = userData.email || `github-${userData.id}@example.com`;
     name = userData.name || userData.login;
     avatar = userData.avatar_url;
@@ -81,21 +85,59 @@ export const oauthCallback = asyncHandler(async (req, res) => {
   // ---------------- FIND OR CREATE USER ----------------
   let user = await User.findOne({ email });
   if (!user) {
-    user = await User.create({ username: name, email, avatar });
+    user = await User.create({
+      username: name,
+      email,
+      avatar,
+      oauthProvider: provider,
+    });
   }
 
-  // ---------------- CREATE JWT ----------------
-  const token = createJWT(user._id);
+  // ---------------- GENERATE TOKENS ----------------
+  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
+    user._id
+  );
 
-  // ---------------- SEND COOKIE ----------------
+  // ---------------- CACHE USER PROFILE IN REDIS ----------------
+  if (isRedisEnabled) {
+    const cachedUser = {
+      _id: user._id,
+      username: user.username,
+      fullName: user.fullName || name,
+      avatar: user.avatar,
+      oauthProvider: user.oauthProvider,
+    };
+    await redisSet(
+      `user:${user._id}:profile`,
+      JSON.stringify(cachedUser),
+      3600
+    ); // 1 hour TTL
+  }
+
+  // ---------------- SET COOKIE LIKE LOCAL LOGIN ----------------
+  const isProduction = process.env.NODE_ENV === 'production';
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  };
+
   res
-    .cookie('accessToken', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
-    })
-    .redirect(process.env.FRONTEND_URL || 'http://localhost:5173'); // Redirect to frontend
+    .cookie('accessToken', accessToken, cookieOptions)
+    .cookie('refreshToken', refreshToken, cookieOptions)
+    .redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
 });
 
-console.log(process.env.FRONTEND_URL);
+// ---------------- HELPER: GENERATE TOKENS ----------------
+const generateAccessAndRefreshTokens = async (userId) => {
+  const user = await User.findById(userId);
+
+  const accessToken = user.generateAccessToken(); // User model method
+  const refreshToken = user.generateRefreshToken();
+
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
+
+  return { accessToken, refreshToken };
+};
