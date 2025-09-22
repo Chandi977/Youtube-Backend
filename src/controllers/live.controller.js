@@ -60,15 +60,26 @@ const createLiveStream = asyncHandler(async (req, res) => {
     scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
   });
 
-  const createdStream = await LiveStream.findById(liveStream._id).populate(
-    'owner',
-    'username fullName avatar'
-  );
+  const createdStream = await LiveStream.findById(liveStream._id)
+    .populate('owner', 'username fullName avatar')
+    .lean();
+
+  // Construct the full RTMP URL for the client
+  const rtmpServerUrl = process.env.RTMP_SERVER_URL;
+  if (!rtmpServerUrl) {
+    throw new ApiError(500, 'RTMP server URL is not configured on the server.');
+  }
+
+  const responseData = {
+    ...createdStream,
+    // e.g., rtmp://live.my-app.com/live/{streamKey}
+    rtmpUrl: `${rtmpServerUrl}/${createdStream.streamKey}`,
+  };
 
   return res
     .status(201)
     .json(
-      new ApiResponse(201, createdStream, 'Live stream created successfully')
+      new ApiResponse(201, responseData, 'Live stream created successfully')
     );
 });
 

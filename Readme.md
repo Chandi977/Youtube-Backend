@@ -49,6 +49,8 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    ```
 4. **Create a `.env` file in the root directory with the following environment variables:**
 
+   You can copy the example file and then add your values:
+   `cp .env.example .env`
    ```bash
    PORT=8000
    NODE_ENV=development # Use 'production' on your hosting service
@@ -67,6 +69,7 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    CLOUDINARY_API_KEY=your_cloudinary_api_key
    CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
+   RTMP_SERVER_URL=rtmp://your-rtmp-server/live
    # OAuth & URLs
    CORS_ORIGIN=http://localhost:5173,https://your-production-frontend.com
    BASE_URL=http://localhost:8000 # For production: https://your-backend-url.com
