@@ -14,6 +14,7 @@ import {
   redisGet,
   redisSet,
   redisDel,
+  redisSRem,
   isRedisEnabled,
 } from '../utils/upstash.js';
 import { getVideoOrFail } from './video.controller.js'; // Reuse helper
