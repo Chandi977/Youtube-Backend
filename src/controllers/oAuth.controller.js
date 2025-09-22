@@ -2,13 +2,18 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { User } from '../models/user.model.js';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
-import fetch from 'node-fetch'; // For GitHub API calls
-import { redisSet, isRedisEnabled } from '../utils/upstash.js'; // Redis helpers
+import fetch from 'node-fetch';
+import { redisSet, isRedisEnabled } from '../utils/upstash.js';
 
-// ---------------- JWT UTIL ----------------
-const createJWT = (userId) =>
+// ---------------- JWT UTILS ----------------
+const createAccessToken = (userId) =>
   jwt.sign({ _id: userId }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: '1d',
+  });
+
+const createRefreshToken = (userId) =>
+  jwt.sign({ _id: userId }, process.env.REFRESH_TOKEN_SECRET, {
+    expiresIn: '7d',
   });
 
 // ---------------- GOOGLE OAUTH ----------------
@@ -40,7 +45,7 @@ export const oauthCallback = asyncHandler(async (req, res) => {
   const provider = req.path.includes('google') ? 'google' : 'github';
   let email, name, avatar;
 
-  // Fetch user info from provider
+  // ---------- FETCH USER INFO ----------
   if (provider === 'google') {
     const { tokens } = await googleClient.getToken(code);
     googleClient.setCredentials(tokens);
@@ -52,7 +57,8 @@ export const oauthCallback = asyncHandler(async (req, res) => {
     email = payload.email;
     name = payload.name;
     avatar = payload.picture;
-  } else if (provider === 'github') {
+  } else {
+    // GitHub
     const tokenResponse = await fetch(
       'https://github.com/login/oauth/access_token',
       {
@@ -82,7 +88,7 @@ export const oauthCallback = asyncHandler(async (req, res) => {
     avatar = userData.avatar_url;
   }
 
-  // ---------------- FIND OR CREATE USER ----------------
+  // ---------- FIND OR CREATE USER ----------
   let user = await User.findOne({ email });
   if (!user) {
     user = await User.create({
@@ -93,12 +99,14 @@ export const oauthCallback = asyncHandler(async (req, res) => {
     });
   }
 
-  // ---------------- GENERATE TOKENS ----------------
-  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
-    user._id
-  );
+  // ---------- GENERATE TOKENS ----------
+  const accessToken = createAccessToken(user._id);
+  const refreshToken = createRefreshToken(user._id);
 
-  // ---------------- CACHE USER PROFILE IN REDIS ----------------
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
+
+  // ---------- CACHE USER PROFILE IN REDIS ----------
   if (isRedisEnabled) {
     const cachedUser = {
       _id: user._id,
@@ -111,33 +119,22 @@ export const oauthCallback = asyncHandler(async (req, res) => {
       `user:${user._id}:profile`,
       JSON.stringify(cachedUser),
       3600
-    ); // 1 hour TTL
+    );
   }
 
-  // ---------------- SET COOKIE LIKE LOCAL LOGIN ----------------
+  // ---------- SET COOKIES ----------
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieOptions = {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
 
   res
     .cookie('accessToken', accessToken, cookieOptions)
     .cookie('refreshToken', refreshToken, cookieOptions)
-    .redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
+    .redirect(
+      `${process.env.FRONTEND_URL || 'http://localhost:5173'}/oauth-success`
+    );
 });
-
-// ---------------- HELPER: GENERATE TOKENS ----------------
-const generateAccessAndRefreshTokens = async (userId) => {
-  const user = await User.findById(userId);
-
-  const accessToken = user.generateAccessToken(); // User model method
-  const refreshToken = user.generateRefreshToken();
-
-  user.refreshToken = refreshToken;
-  await user.save({ validateBeforeSave: false });
-
-  return { accessToken, refreshToken };
-};
