@@ -1,11 +1,12 @@
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { User } from '../models/user.model.js';
+// controllers/oauth.controller.js
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import fetch from 'node-fetch';
+import { User } from '../models/user.model.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { ApiError } from '../utils/ApiError.js';
 import { redisSet, isRedisEnabled } from '../utils/upstash.js';
 
-// ---------------- JWT UTILS ----------------
 const createAccessToken = (userId) =>
   jwt.sign({ _id: userId }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: '1d',
@@ -16,7 +17,14 @@ const createRefreshToken = (userId) =>
     expiresIn: '7d',
   });
 
-// ---------------- GOOGLE OAUTH ----------------
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
+
+// ---------------- GOOGLE ----------------
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
@@ -31,42 +39,38 @@ export const googleOAuth = asyncHandler(async (req, res) => {
   res.redirect(url);
 });
 
-// ---------------- GITHUB OAUTH ----------------
+// ---------------- GITHUB ----------------
 export const githubOAuth = asyncHandler(async (req, res) => {
-  const clientId = process.env.GITHUB_CLIENT_ID;
-  const redirectUri = process.env.GITHUB_REDIRECT_URI;
-  const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=user:email`;
+  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${process.env.GITHUB_REDIRECT_URI}&scope=user:email`;
   res.redirect(url);
 });
 
-// ---------------- CALLBACK FOR BOTH ----------------
+// ---------------- CALLBACK (COMMON) ----------------
 export const oauthCallback = asyncHandler(async (req, res) => {
   const { code } = req.query;
   const provider = req.path.includes('google') ? 'google' : 'github';
+
   let email, name, avatar;
 
-  // ---------- FETCH USER INFO ----------
   if (provider === 'google') {
     const { tokens } = await googleClient.getToken(code);
     googleClient.setCredentials(tokens);
+
     const ticket = await googleClient.verifyIdToken({
       idToken: tokens.id_token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
+
     email = payload.email;
     name = payload.name;
     avatar = payload.picture;
   } else {
-    // GitHub
     const tokenResponse = await fetch(
       'https://github.com/login/oauth/access_token',
       {
         method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers: { Accept: 'application/json' },
         body: JSON.stringify({
           client_id: process.env.GITHUB_CLIENT_ID,
           client_secret: process.env.GITHUB_CLIENT_SECRET,
@@ -74,12 +78,10 @@ export const oauthCallback = asyncHandler(async (req, res) => {
         }),
       }
     );
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { access_token } = await tokenResponse.json();
 
     const userResponse = await fetch('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${access_token}` },
     });
     const userData = await userResponse.json();
 
@@ -88,25 +90,28 @@ export const oauthCallback = asyncHandler(async (req, res) => {
     avatar = userData.avatar_url;
   }
 
-  // ---------- FIND OR CREATE USER ----------
+  if (!email) throw new ApiError(400, 'OAuth provider did not return an email');
+
+  // --- find or create user ---
   let user = await User.findOne({ email });
   if (!user) {
     user = await User.create({
-      username: name,
+      fullName: name,
+      username: `${provider}_${Date.now()}`,
       email,
       avatar,
       oauthProvider: provider,
     });
   }
 
-  // ---------- GENERATE TOKENS ----------
+  // --- generate tokens ---
   const accessToken = createAccessToken(user._id);
   const refreshToken = createRefreshToken(user._id);
 
   user.refreshToken = refreshToken;
   await user.save({ validateBeforeSave: false });
 
-  // ---------- CACHE USER PROFILE IN REDIS ----------
+  // --- cache profile in Redis ---
   if (isRedisEnabled) {
     const cachedUser = {
       _id: user._id,
@@ -121,15 +126,6 @@ export const oauthCallback = asyncHandler(async (req, res) => {
       3600
     );
   }
-
-  // ---------- SET COOKIES ----------
-  const isProduction = process.env.NODE_ENV === 'production';
-  const cookieOptions = {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  };
 
   res
     .cookie('accessToken', accessToken, cookieOptions)
