@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Your Node.js application
+  app:
+    build: .
+    container_name: youtube_backend_app
+    env_file:
+      - .env
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules # Avoids overwriting node_modules with local copy
+    restart: unless-stopped
+
+  # Nginx server with RTMP module
+  nginx:
+    image: tiangolo/nginx-rtmp
+    container_name: youtube_rtmp_server
+    ports:
+      - '1935:1935' # RTMP port
+      - '80:80' # HTTP port
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - hls_data:/tmp/hls
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  hls_data:

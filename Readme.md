@@ -51,6 +51,7 @@ VideoTube is a backend service for a video streaming platform. It handles user a
 
    You can copy the example file and then add your values:
    `cp .env.example .env`
+
    ```bash
    PORT=8000
    NODE_ENV=development # Use 'production' on your hosting service
@@ -69,7 +70,7 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    CLOUDINARY_API_KEY=your_cloudinary_api_key
    CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-   RTMP_SERVER_URL=rtmp://your-rtmp-server/live
+   RTMP_SERVER_URL=rtmp://localhost/live
    # OAuth & URLs
    CORS_ORIGIN=http://localhost:5173,https://your-production-frontend.com
    BASE_URL=http://localhost:8000 # For production: https://your-backend-url.com
@@ -85,6 +86,68 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    ```bash
    npm start
    ```
+
+## Live Streaming with Docker and Nginx-RTMP (Recommended for Development)
+
+This project includes a Docker setup to easily run the application alongside an Nginx server configured for RTMP live streaming. This is the recommended way to test the live streaming feature locally.
+
+### Prerequisites
+
+- **Docker and Docker Compose**: Ensure you have both installed on your machine. Docker Desktop for Mac and Windows includes both.
+
+### How to Run
+
+1.  **Create Environment File**: If you haven't already, create your `.env` file by copying the example file. This file contains all the necessary secrets and configuration for the application.
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Then, open the `.env` file and fill in your specific values, especially for `MONGODB_URI` and your Cloudinary credentials.
+
+2.  **Build and Run Containers**: Use Docker Compose to build the images and start the services.
+
+    ```bash
+    docker-compose up --build
+    ```
+
+    This command will:
+    - Build a Docker image for your Node.js application based on the `Dockerfile`.
+    - Start the Node.js application container (`app`).
+    - Start the Nginx container (`nginx`) with the RTMP module.
+    - To run in the background (detached mode), use `docker-compose up --build -d`.
+
+3.  **Check Container Status**: You can verify that both containers (`youtube_backend_app` and `youtube_rtmp_server`) are running.
+
+    ```bash
+    docker-compose ps
+    ```
+
+### Accessing Your Services
+
+Once the containers are running, your services will be available at these addresses:
+
+- **API & Sockets**: `http://localhost` (Nginx on port 80 proxies requests to your app)
+- **RTMP Ingest**: `rtmp://localhost/live` (For OBS or other streaming software on port 1935)
+- **HLS Playback**: `http://localhost/hls/<streamKey>.m3u8` (For video players in the browser)
+
+### Viewing Logs
+
+To see the real-time logs from your application or the Nginx server, use the following command:
+
+```bash
+docker-compose logs -f app
+```
+
+_(Replace `app` with `nginx` to see Nginx logs.)_
+
+### Stopping the Containers
+
+To stop and remove the containers, network, and volumes, run:
+
+```bash
+docker-compose down
+```
 
 ## API Endpoints
 

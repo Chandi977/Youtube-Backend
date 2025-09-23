@@ -8,6 +8,7 @@ export const processVideo = async (inputPath, videoId) => {
 
   const resolutions = [
     { label: '144p', width: 256, height: 144, bitrate: 200 },
+    { label: '240p', width: 426, height: 240, bitrate: 500 },
     { label: '360p', width: 640, height: 360, bitrate: 800 },
     { label: '480p', width: 854, height: 480, bitrate: 1200 },
     { label: '720p', width: 1280, height: 720, bitrate: 2500 },

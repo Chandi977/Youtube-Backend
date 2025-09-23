@@ -67,7 +67,10 @@ const createLiveStream = asyncHandler(async (req, res) => {
   // Construct the full RTMP URL for the client
   const rtmpServerUrl = process.env.RTMP_SERVER_URL;
   if (!rtmpServerUrl) {
-    throw new ApiError(500, 'RTMP server URL is not configured on the server.');
+    throw new ApiError(
+      500,
+      'RTMP server URL is not configured. Please set RTMP_SERVER_URL in your .env file.'
+    );
   }
 
   const responseData = {
