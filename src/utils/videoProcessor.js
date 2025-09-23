@@ -1,6 +1,10 @@
-import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import { ApiError } from './ApiError.js';
+
+ffmpeg.setFfmpegPath(ffmpegStatic);
 
 export const processVideo = async (inputPath, videoId) => {
   const outputFolder = path.join('videos', videoId);
@@ -20,8 +24,21 @@ export const processVideo = async (inputPath, videoId) => {
   for (const res of resolutions) {
     const outputPath = path.join(outputFolder, `${res.label}.m3u8`);
     await new Promise((resolve, reject) => {
-      const cmd = `ffmpeg -i "${inputPath}" -vf scale=${res.width}:${res.height} -c:a aac -ar 48000 -b:v ${res.bitrate}k -hls_time 6 -hls_playlist_type vod "${outputPath}"`;
-      exec(cmd, (err) => (err ? reject(err) : resolve()));
+      ffmpeg(inputPath)
+        .outputOptions([
+          `-vf scale=${res.width}:${res.height}`,
+          '-c:a aac',
+          '-ar 48000',
+          `-b:v ${res.bitrate}k`,
+          '-hls_time 6',
+          '-hls_playlist_type vod',
+        ])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', (err) => {
+          reject(new ApiError(500, `FFmpeg processing failed: ${err.message}`));
+        })
+        .run();
     });
     resolutionsUrls.push({
       label: res.label,
@@ -30,4 +47,43 @@ export const processVideo = async (inputPath, videoId) => {
   }
 
   return resolutionsUrls;
+};
+
+/**
+ * Compresses a video file using FFmpeg to reduce its size.
+ * @param {string} inputPath - The path to the original video file.
+ * @returns {Promise<string>} A promise that resolves with the path to the compressed video file.
+ */
+export const compressVideo = (inputPath) => {
+  // Create a new path for the compressed file in the same directory
+  const fileExtension = path.extname(inputPath);
+  const baseName = path.basename(inputPath, fileExtension);
+  const dirName = path.dirname(inputPath);
+  const outputPath = path.join(dirName, `${baseName}-compressed.mp4`);
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions([
+        '-vcodec libx264',
+        '-crf 28', // Constant Rate Factor for quality/size balance
+        '-preset veryfast',
+        '-acodec aac',
+      ])
+      .output(outputPath)
+      .on('end', () => {
+        // Delete the original, larger file to save space
+        fs.unlink(inputPath, (unlinkErr) => {
+          if (unlinkErr) {
+            console.error(
+              `Failed to delete original uncompressed file: ${inputPath}`,
+              unlinkErr
+            );
+          }
+        });
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        reject(new ApiError(500, `FFmpeg compression failed: ${err.message}`));
+      });
+  });
 };

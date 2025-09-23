@@ -85,6 +85,9 @@ export const initializeSocket = (server) => {
       `User ${socket.user.username} connected with socket ID: ${socket.id}`
     );
 
+    // Join a room based on user ID for private notifications
+    socket.join(socket.user._id.toString());
+
     // Join stream room
     socket.on('join-stream', async (data) => {
       try {

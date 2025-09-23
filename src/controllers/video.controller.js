@@ -18,6 +18,7 @@ import {
   isRedisEnabled,
   redisSRem,
 } from '../utils/upstash.js';
+import { compressVideo } from '../utils/videoProcessor.js';
 
 // ====================== Helpers ======================
 
@@ -134,40 +135,86 @@ const getAllVideos = asyncHandler(async (req, res) => {
 
 const publishAVideo = asyncHandler(async (req, res) => {
   const { title, description } = req.body;
-  const videoFile = req.files?.['videoFile']?.[0];
+  let videoFile = req.files?.['videoFile']?.[0];
   const thumbnail = req.files?.['thumbnail']?.[0];
 
   if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail) {
     throw new ApiError(400, 'All fields are required');
   }
 
-  // Upload thumbnail to Cloudinary
-  const uploadedThumb = await uploadOnCloudinary(thumbnail.path, 'image');
+  let compressedVideoPath;
+  let uploadedThumb = null;
+  let uploadedVideo = null;
 
-  // Upload video to Cloudinary with adaptive qualities
-  const uploadedVideo = await uploadOnCloudinary(videoFile.path, 'video');
+  try {
+    // --- STEP 1: Compress video before uploading to Cloudinary ---
+    // This helps to stay within the free tier file size limits.
+    // WARNING: This is a blocking, CPU-intensive operation. In production,
+    // this should be handled by a background worker queue.
+    try {
+      compressedVideoPath = await compressVideo(videoFile.path);
+    } catch (compressionError) {
+      // If compression fails, we clean up the temp file and throw an error.
+      if (fs.existsSync(videoFile.path)) fs.unlinkSync(videoFile.path);
+      throw compressionError; // This will be caught by the outer try-catch
+    }
 
-  const newVideo = await Video.create({
-    title: title.trim(),
-    description: description.trim(),
-    owner: req.user._id,
-    thumbnail: {
-      url: uploadedThumb.secure_url,
-      public_id: uploadedThumb.public_id,
-    },
-    videoFile: {
-      url: uploadedVideo.secure_url, // main video URL
-      public_id: uploadedVideo.public_id,
-      eager: uploadedVideo.eager || [], // adaptive resolutions
-      streaming_profile: 'hd',
-      duration: uploadedVideo.duration || 0,
-    },
-    isPublished: true,
-  });
+    // --- STEP 2: Upload thumbnail to Cloudinary ---
+    uploadedThumb = await uploadOnCloudinary(
+      thumbnail.path,
+      'image',
+      req.io,
+      req.user._id
+    );
+    if (!uploadedThumb?.secure_url) {
+      throw new ApiError(500, 'Thumbnail upload failed');
+    }
 
-  res
-    .status(201)
-    .json(new ApiResponse(201, newVideo, 'Video published successfully'));
+    // --- STEP 3: Upload video to Cloudinary with adaptive qualities ---
+    uploadedVideo = await uploadOnCloudinary(
+      compressedVideoPath,
+      'video',
+      req.io,
+      req.user._id
+    );
+    if (!uploadedVideo?.secure_url) {
+      throw new ApiError(500, 'Video file upload failed');
+    }
+
+    // --- STEP 4: Create video document in the database ---
+    const newVideo = await Video.create({
+      title: title.trim(),
+      description: description.trim(),
+      owner: req.user._id,
+      thumbnail: {
+        url: uploadedThumb.secure_url,
+        public_id: uploadedThumb.public_id,
+      },
+      videoFile: {
+        url: uploadedVideo.secure_url, // main video URL
+        public_id: uploadedVideo.public_id,
+        eager: uploadedVideo.eager || [], // adaptive resolutions
+        streaming_profile: 'hd',
+        duration: uploadedVideo.duration || 0,
+      },
+      isPublished: true,
+    });
+
+    return res
+      .status(201)
+      .json(new ApiResponse(201, newVideo, 'Video published successfully'));
+  } catch (error) {
+    // --- ERROR & CLEANUP ---
+    // If any step fails, delete any files that were successfully uploaded to Cloudinary.
+    if (uploadedThumb?.public_id) {
+      await deleteFromCloudinary(uploadedThumb.public_id, 'image');
+    }
+    if (uploadedVideo?.public_id) {
+      await deleteFromCloudinary(uploadedVideo.public_id, 'video');
+    }
+    // Re-throw the error to be handled by the global error handler
+    throw error;
+  }
 });
 
 // GET VIDEO BY ID (with caching)
