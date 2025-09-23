@@ -62,15 +62,15 @@ const socketAuth = async (socket, next) => {
 };
 
 export const initializeSocket = (server) => {
-  // Use the same logic as app.js for consistency
-  const allowedOrigins = process.env.CORS_ORIGIN
+  // Define a base set of allowed origins, including localhost and all Vercel domains.
+  const baseAllowedOrigins = [
+    'http://localhost:5173', // Local development frontend
+    /\.vercel\.app$/, // Matches any Vercel deployment URL
+  ];
+  const envOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
-    : ['http://localhost:5173'];
-
-  // Also allow Vercel preview URLs for sockets in non-production
-  if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push(/\.vercel\.app$/);
-  }
+    : [];
+  const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
 
   const io = new Server(server, {
     cors: {

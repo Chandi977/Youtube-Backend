@@ -57,24 +57,26 @@ app.use(compression());
 // ------------------------
 // CORS (Updated for Socket.IO)
 // ------------------------
-// Split the env variable into an array and clean it
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
-  : ['http://localhost:5173'];
+// Define a base set of allowed origins, including localhost and all Vercel domains.
+const baseAllowedOrigins = [
+  'http://localhost:5173', // Local development frontend
+  /\.vercel\.app$/, // Matches any Vercel deployment URL (e.g., project.vercel.app, project-git-branch.vercel.app)
+];
 
-// For Vercel preview deployments, we can dynamically allow their URLs.
-// The regex allows any subdomain of vercel.app.
-// It's a good practice to only enable this for non-production environments.
-if (process.env.NODE_ENV !== 'production') {
-  allowedOrigins.push(/\.vercel\.app$/);
-}
+// Add origins from the environment variable, if they exist.
+const envOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+  : [];
+
+// Combine and create a unique list of allowed origins.
+const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
 
 console.log('Allowed Origins:', allowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like Postman, mobile apps)
+      // Allow requests with no origin (like Postman, mobile apps, server-to-server)
       if (!origin) return callback(null, true);
 
       // Check if the origin is in our allowed list (string or regex)
