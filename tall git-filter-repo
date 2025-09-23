@@ -1,0 +1,253 @@
+[33mcommit 8318481bea5548cb15ee75ed0a5d531328bb9987[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Tue Sep 23 12:36:34 2025 +0530
+
+    test
+
+ public/temp/20250401_225201.mp4 | Bin [31m122565710[m -> [32m0[m bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+[33mcommit d33832e9a6d04500a389328ea5c3f253e78e0cc0[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Tue Sep 23 12:33:14 2025 +0530
+
+    ffmpeg test
+
+ package-lock.json                         | 101 [32m++++++++++++++++++++++++++++++[m
+ package.json                              |   1 [32m+[m
+ public/temp/20250401_225201.mp4           | Bin [31m0[m -> [32m122565710[m bytes
+ public/temp/20250402_123146.jpg           | Bin [31m0[m -> [32m4003306[m bytes
+ public/temp/WIN_20240911_16_15_41_Pro.mp4 | Bin [31m11619695[m -> [32m0[m bytes
+ src/controllers/video.controller.js       |  97 [32m++++++++++++++++++++[m[31m--------[m
+ src/socket/socketHandler.js               |   3 [32m+[m
+ src/utils/cloudinary.js                   |  62 [32m+++++++++++++++++[m[31m-[m
+ src/utils/videoProcessor.js               |  62 [32m+++++++++++++++++[m[31m-[m
+ 9 files changed, 295 insertions(+), 31 deletions(-)
+
+[33mcommit b36fe3bab214a9f6b71f1c140181947a8d035728[m[33m ([m[1;31morigin/master[m[33m)[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Tue Sep 23 11:47:16 2025 +0530
+
+    ffmpeg video enhancement
+
+ .env.example                       |  2 [32m+[m[31m-[m
+ Dockerfile                         | 17 [32m++++++++[m[31m--[m
+ Readme.md                          | 65 [32m+++++++++++++++++++++++++++++++++++++[m[31m-[m
+ docker-compose.yml                 | 30 [32m++++++++++++++++++[m
+ nginx.conf                         | 56 [32m++++++++++++++++++++++++++++++++[m
+ src/controllers/live.controller.js |  5 [32m++[m[31m-[m
+ src/socket/nginx.conf              | 63 [32m++++++++++++++++++++++++++++++++++++[m
+ src/utils/videoProcessor.js        |  1 [32m+[m
+ 8 files changed, 234 insertions(+), 5 deletions(-)
+
+[33mcommit 47f9aa2999b765519ff21fa3ab8b887c1ee63c95[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 21:38:01 2025 +0530
+
+    rmtp server set
+
+ .env.example                       | 29 [32m+++++++++++++++++++++++++++++[m
+ Readme.md                          |  3 [32m+++[m
+ src/controllers/live.controller.js | 21 [32m++++++++++++++++[m[31m-----[m
+ 3 files changed, 48 insertions(+), 5 deletions(-)
+
+[33mcommit 3a479b75099860019afdfdc7398a8e9d7efd1279[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 18:37:25 2025 +0530
+
+    improvement on oAuth
+
+ src/controllers/oAuth.controller.js | 60 [32m+++++++++++++++++[m[31m--------------------[m
+ src/routes/auth.routes.js           | 60 [32m+++++++[m[31m------------------------------[m
+ 2 files changed, 38 insertions(+), 82 deletions(-)
+
+[33mcommit ade851d0212b80a1db34f7be493ed711c984d6c3[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 18:07:05 2025 +0530
+
+    oAuth components
+
+ src/config/passport.js              | 48 [32m++++++[m[31m--------------------------[m
+ src/controllers/oAuth.controller.js | 55 [32m++++++++++++++++++[m[31m-------------------[m
+ src/routes/auth.routes.js           | 45 [32m++++++++++++++++[m[31m--------------[m
+ 3 files changed, 60 insertions(+), 88 deletions(-)
+
+[33mcommit e9bfccca05c0ed18786a1705c1a10d46283cd392[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 17:14:54 2025 +0530
+
+    Oauth with redis
+
+ src/controllers/oAuth.controller.js | 72 [32m+++++++++++++++++++++++++++++[m[31m--------[m
+ 1 file changed, 57 insertions(+), 15 deletions(-)
+
+[33mcommit 8e5846405316eb1f48d1fe6e523f878ee901999a[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 14:53:00 2025 +0530
+
+    like controller advancments
+
+ src/controllers/like.controller.js | 101 [32m+++++++++++++++++++++++++++++[m[31m--------[m
+ src/routes/like.routes.js          |  25 [32m++++++[m[31m---[m
+ 2 files changed, 98 insertions(+), 28 deletions(-)
+
+[33mcommit d75c475dac9da1b4211d447064e5eb8af37bc6ae[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 14:25:52 2025 +0530
+
+    like check
+
+ src/controllers/like.controller.js | 1 [32m+[m
+ 1 file changed, 1 insertion(+)
+
+[33mcommit d974164869ec8ad01c9b213bf71062daeb157e8f[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Mon Sep 22 13:41:37 2025 +0530
+
+    GetComments now un protected
+
+ src/routes/comment.routes.js | 8 [32m++++++[m[31m--[m
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+[33mcommit 5d731cd3bb4e8b56ecad2fde3cc8aa0780455352[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 18:23:28 2025 +0530
+
+    updates
+
+ src/controllers/oAuth.controller.js | 101 [32m++++++++++++++++++++++++++++++++++++[m
+ src/routes/auth.routes.js           |   4 [32m+[m[31m-[m
+ 2 files changed, 103 insertions(+), 2 deletions(-)
+
+[33mcommit a936f30fe288dfb22d766e489166567c3a39c3c3[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 18:15:32 2025 +0530
+
+    tri Oauth
+
+ Readme.md                           | 180 [32m+++++++++++++++++++++[m[31m---------------[m
+ src/controllers/oAuth.controller.js |  99 [31m--------------------[m
+ src/middlewares/auth.middleware.js  |  61 [32m+[m[31m-----------[m
+ src/routes/auth.routes.js           |  18 [32m+++[m[31m-[m
+ 4 files changed, 121 insertions(+), 237 deletions(-)
+
+[33mcommit 98716a6056573605cddc1757696dcd72f711999d[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 17:50:46 2025 +0530
+
+    Gemini update
+
+ src/config/passport.js   | 38 [32m++++++++++++++++++++++++++++++++++[m[31m----[m
+ src/models/user.model.js | 12 [32m+++++++++++[m[31m-[m
+ 2 files changed, 45 insertions(+), 5 deletions(-)
+
+[33mcommit 2723dd3f47ce76c8ca0e67dc9ad7f9e9776b8c6c[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 17:41:10 2025 +0530
+
+    try gemini solving
+
+ src/config/passport.js | 19 [32m+++++++++++[m[31m--------[m
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+[33mcommit 58eb9f78fffd12a9cae7e622d6bc0700150823eb[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 17:34:53 2025 +0530
+
+    Github
+
+ src/config/passport.js | 2 [32m+[m[31m-[m
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+[33mcommit bae8c82a88622039d99f07e79bd7cc09ad0976ae[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 17:34:11 2025 +0530
+
+    google URI
+
+ src/config/passport.js | 6 [32m+++++[m[31m-[m
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+[33mcommit eef4daf88e153a73a38cc87dc2fe007aae0f6637[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 16:35:50 2025 +0530
+
+    test
+
+ src/app.js                |  4 [32m++++[m
+ src/routes/auth.routes.js | 13 [32m++++++++[m[31m-----[m
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+[33mcommit 98ad415691a0cfabdc459476f612fbcb63ff4d1b[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 15:13:38 2025 +0530
+
+    minor bug fix
+
+ src/controllers/User/auth.controllers.js | 29 [32m+++++++++++++++[m[31m--------------[m
+ 1 file changed, 15 insertions(+), 14 deletions(-)
+
+[33mcommit 7498bbfd320e22beb431067d3d8028b5db34cb1f[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 14:51:09 2025 +0530
+
+    COOKIE check
+
+ src/controllers/User/auth.controllers.js | 15 [32m++++++++++++[m[31m---[m
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+[33mcommit 2f3a47ffe23bf56c58f7e8cddaa6302c7eb1e815[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 14:26:30 2025 +0530
+
+    Update on origins
+
+ src/app.js | 17 [32m+++++++++++++[m[31m----[m
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+[33mcommit ff48e443aeec7165391525a6aecad6164f55f36c[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 14:15:18 2025 +0530
+
+    url update
+
+ src/app.js | 5 [32m+[m[31m----[m
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+[33mcommit 062e246da1bf5370512056e818da732a8a3934e4[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sun Sep 21 14:10:54 2025 +0530
+
+    Minor bug fixes
+
+ package-lock.json                   | 389 [32m+++++++++++++++++++++++++++++++++++[m[31m-[m
+ package.json                        |   6 [32m+[m[31m-[m
+ src/app.js                          |   4 [32m+[m
+ src/config/passport.js              |  71 [32m+++++++[m
+ src/controllers/oAuth.controller.js |  99 [32m+++++++++[m
+ src/controllers/tweet.controller.js |  63 [32m+++++[m[31m-[m
+ src/controllers/video.controller.js |  16 [32m+[m[31m-[m
+ src/middlewares/auth.middleware.js  | 103 [32m+++++++[m[31m---[m
+ src/models/tweet.model.js           |  25 [32m++[m[31m-[m
+ src/routes/auth.routes.js           |  43 [32m++++[m
+ src/routes/tweet.routes.js          |  19 [32m+[m[31m-[m
+ 11 files changed, 797 insertions(+), 41 deletions(-)
+
+[33mcommit cb884362a619c0801049fbdf9420bf9bc022355b[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sat Sep 20 20:26:38 2025 +0530
+
+    minor bug Fixes
+
+ src/controllers/comment.controller.js  | 21 [32m++++++++++++++[m[31m-------[m
+ src/controllers/playlist.controller.js | 17 [32m+++++++++[m[31m--------[m
+ 2 files changed, 23 insertions(+), 15 deletions(-)
+
+[33mcommit 958ad4cfd618409e1a55389df33fe59fa06ce575[m
+Author: Chandi977 <pappumahato000@gmail.com>
+Date:   Sat Sep 20 16:08:57 2025 +0530
+
+    rate limit
+
+ src/app.js | 30 [32m+++++++++++++++[m[31m---------------[m
+ 1 file changed, 15 insertions(+), 15 deletions(-)
