@@ -62,10 +62,15 @@ const socketAuth = async (socket, next) => {
 };
 
 export const initializeSocket = (server) => {
-  const allowedOrigins = [
-    process.env.CORS_ORIGIN || 'http://localhost:3000',
-    'https://youtube-frontend.vercel.app',
-  ];
+  // Use the same logic as app.js for consistency
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+    : ['http://localhost:5173'];
+
+  // Also allow Vercel preview URLs for sockets in non-production
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.push(/\.vercel\.app$/);
+  }
 
   const io = new Server(server, {
     cors: {

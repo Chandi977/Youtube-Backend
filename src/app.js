@@ -62,17 +62,29 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
   : ['http://localhost:5173'];
 
+// For Vercel preview deployments, we can dynamically allow their URLs.
+// The regex allows any subdomain of vercel.app.
+// It's a good practice to only enable this for non-production environments.
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push(/\.vercel\.app$/);
+}
+
 console.log('Allowed Origins:', allowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like Postman) or matching allowed origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Not allowed by CORS: ${origin}`));
-      }
+      // Allow requests with no origin (like Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      // Check if the origin is in our allowed list (string or regex)
+      const isAllowed = allowedOrigins.some((allowed) =>
+        allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
+      );
+
+      if (isAllowed) return callback(null, true);
+
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
     credentials: true, // important for cookies/auth
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -84,8 +96,8 @@ app.use(
 // ------------------------
 // Body parsers
 // ------------------------
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 app.use(express.static('public'));
 
