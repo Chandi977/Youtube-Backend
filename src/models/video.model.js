@@ -5,12 +5,12 @@ const videoSchema = new Schema(
   {
     videoFile: {
       url: {
-        type: String,
-        required: true,
+        type: String, // Set by worker after processing
+        required: false,
       }, // Cloudinary secure URL
       public_id: {
-        type: String,
-        required: true,
+        type: String, // Set by worker after processing
+        required: false,
       }, // Cloudinary public_id for updates/deletes
       format: {
         type: String,
@@ -54,6 +54,12 @@ const videoSchema = new Schema(
     isPublished: {
       type: Boolean,
       default: true,
+    },
+    status: {
+      type: String,
+      enum: ['processing', 'published', 'failed'],
+      default: 'processing',
+      required: true,
     },
     owner: {
       type: Schema.Types.ObjectId,
