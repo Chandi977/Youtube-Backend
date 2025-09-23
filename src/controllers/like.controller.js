@@ -207,17 +207,35 @@ const getLikedVideos = asyncHandler(async (req, res) => {
     likedVideoIds = likedVideos.map((id) => id.toString());
   }
 
-  let likedVideos;
+  let likes;
 
   if (likedVideoIds.length) {
-    likedVideos = await Video.find({ _id: { $in: likedVideoIds } })
-      .select('_id title description owner viewsCount likesCount')
-      .lean();
+    likes = await Like.find({
+      likedBy: userId,
+      video: { $in: likedVideoIds },
+    }).populate({
+      path: 'video',
+      populate: { path: 'owner', select: 'username fullName avatar' },
+    });
   } else {
-    likedVideos = await Like.find({ video: { $ne: null }, likedBy: userId })
-      .populate('video', '_id title description owner viewsCount likesCount')
+    likes = await Like.find({ video: { $ne: null }, likedBy: userId })
+      .populate({
+        path: 'video',
+        populate: { path: 'owner', select: 'username fullName avatar' },
+      })
       .lean();
-    likedVideos = likedVideos.map((l) => l.video).filter(Boolean);
+  }
+
+  const likedVideos = likes
+    .filter((like) => like.video && like.video.owner) // only keep valid ones
+    .map((like) => ({
+      video: like.video,
+      channel: like.video.owner,
+    }));
+
+  if (isRedisEnabled) {
+    // Cache the shaped data
+    await redisSet(`user:${userId}:likedVideos`, likedVideos, 300);
   }
 
   return res

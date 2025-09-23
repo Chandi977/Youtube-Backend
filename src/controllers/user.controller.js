@@ -164,61 +164,6 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     );
 });
 
-// Get liked videos
-const getLikedVideos = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-  const cacheKey = `user:${userId}:likedVideos`;
-
-  if (isRedisEnabled) {
-    const cached = await redisGet(cacheKey);
-    if (cached)
-      return res
-        .status(200)
-        .json(new ApiResponse(200, cached, 'Liked videos fetched from cache'));
-  }
-
-  const likes = await Like.find({
-    likedBy: userId,
-    video: { $exists: true },
-  }).populate({
-    path: 'video',
-    populate: { path: 'owner', select: 'username fullName avatar' },
-  });
-
-  const likedVideos = likes
-    .filter((like) => like.video && like.video.owner) // only keep valid ones
-    .map((like) => ({
-      video: {
-        _id: like.video._id,
-        title: like.video.title,
-        description: like.video.description,
-        duration: like.video.duration,
-        views: like.video.views,
-        thumbnail: like.video.thumbnail,
-      },
-      channel: {
-        _id: like.video.owner._id,
-        username: like.video.owner.username,
-        fullName: like.video.owner.fullName,
-        avatar: like.video.owner.avatar,
-      },
-    }));
-
-  if (isRedisEnabled) await redisSet(cacheKey, likedVideos, 300);
-
-  res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        likedVideos,
-        likedVideos.length
-          ? 'Liked videos fetched successfully'
-          : 'No liked videos found'
-      )
-    );
-});
-
 // Get complete user view history (no caching)
 const getHistory = asyncHandler(async (req, res) => {
   const userId = req.user._id;
@@ -324,6 +269,5 @@ export {
   recommendedVideos,
   recommendChannels,
   getWatchHistory,
-  getLikedVideos,
   getHistory,
 };

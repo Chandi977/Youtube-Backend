@@ -1,5 +1,5 @@
 import fs from 'fs';
-import mongoose, { isValidObjectId } from 'mongoose';
+import { isValidObjectId } from 'mongoose';
 import { Video } from '../models/video.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -18,7 +18,7 @@ import {
   isRedisEnabled,
   redisSRem,
 } from '../utils/upstash.js';
-import { compressVideo } from '../utils/videoProcessor.js';
+import { processVideoPipeline } from '../utils/videoProcessor.js';
 
 // ====================== Helpers ======================
 
@@ -30,13 +30,13 @@ const getVideoOrFail = async (videoId) => {
   return video;
 };
 
-// Upload file safely
+// Safe Cloudinary upload
 const safeUpload = async (file, type = 'image') => {
   if (!file) return null;
   try {
     return await uploadOnCloudinary(file.path, type);
-  } catch (error) {
-    throw new ApiError(400, error?.message || 'Error while uploading file');
+  } catch (err) {
+    throw new ApiError(400, err?.message || `Error uploading ${type}`);
   }
 };
 
@@ -50,7 +50,7 @@ const formatVideo = (video) => ({
         url: v.secure_url,
         width: v.width,
         height: v.height,
-        quality: v.quality,
+        quality: v.label,
       })) || [],
   },
 });
@@ -67,32 +67,23 @@ const getAllVideos = asyncHandler(async (req, res) => {
     sortType = 'desc',
     isPublished,
   } = req.query;
-
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
 
   const cacheKey = `videos:all:${pageNum}:${limitNum}:${searchQuery || ''}:${sortBy}:${sortType}:${isPublished || ''}`;
-
-  // ✅ Check cache first
   const cached = await redisGet(cacheKey);
-  if (cached) {
+  if (cached)
     return res.status(200).json({
       success: true,
       message: 'Videos fetched from cache',
       data: cached,
     });
-  }
 
-  // Build query
   const matchCriteria = {};
-  if (searchQuery) {
-    matchCriteria.title = { $regex: searchQuery, $options: 'i' };
-  }
-  if (isPublished !== undefined) {
+  if (searchQuery) matchCriteria.title = { $regex: searchQuery, $options: 'i' };
+  if (isPublished !== undefined)
     matchCriteria.isPublished = isPublished === 'true';
-  }
 
-  // Fetch from DB
   const videos = await Video.find(matchCriteria)
     .populate('owner', 'username fullName avatar')
     .sort({ [sortBy]: sortType === 'asc' ? 1 : -1 })
@@ -100,15 +91,8 @@ const getAllVideos = asyncHandler(async (req, res) => {
     .limit(limitNum)
     .lean();
 
-  if (!videos.length) {
-    return res.status(404).json({
-      success: false,
-      message: 'No videos found',
-      data: [],
-    });
-  }
+  if (!videos.length) throw new ApiError(404, 'No videos found');
 
-  // Format + paginate
   const formattedVideos = videos.map(formatVideo);
   const totalVideos = await Video.countDocuments(matchCriteria);
 
@@ -119,10 +103,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
     limit: limitNum,
   };
 
-  // ✅ Save in Redis (always stringify)
-  if (isRedisEnabled) {
-    await redisSet(cacheKey, response, 300); // cache for 5 mins
-  }
+  if (isRedisEnabled) await redisSet(cacheKey, response, 300);
 
   res.status(200).json({
     success: true,
@@ -132,56 +113,30 @@ const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 // PUBLISH VIDEO
-
 const publishAVideo = asyncHandler(async (req, res) => {
   const { title, description } = req.body;
-  let videoFile = req.files?.['videoFile']?.[0];
+  const videoFile = req.files?.['videoFile']?.[0];
   const thumbnail = req.files?.['thumbnail']?.[0];
 
-  if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail) {
+  if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail)
     throw new ApiError(400, 'All fields are required');
-  }
 
-  let compressedVideoPath;
   let uploadedThumb = null;
-  let uploadedVideo = null;
 
   try {
-    // --- STEP 1: Compress video before uploading to Cloudinary ---
-    // This helps to stay within the free tier file size limits.
-    // WARNING: This is a blocking, CPU-intensive operation. In production,
-    // this should be handled by a background worker queue.
-    try {
-      compressedVideoPath = await compressVideo(videoFile.path);
-    } catch (compressionError) {
-      // If compression fails, we clean up the temp file and throw an error.
-      if (fs.existsSync(videoFile.path)) fs.unlinkSync(videoFile.path);
-      throw compressionError; // This will be caught by the outer try-catch
-    }
+    // --- STEP 1: Process video pipeline (compress + HLS) ---
+    const {
+      masterPlaylist: mainPlaylistUrl,
+      duration,
+      variants,
+    } = await processVideoPipeline(videoFile.path, req.io, req.user?._id);
 
-    // --- STEP 2: Upload thumbnail to Cloudinary ---
-    uploadedThumb = await uploadOnCloudinary(
-      thumbnail.path,
-      'image',
-      req.io,
-      req.user._id
-    );
-    if (!uploadedThumb?.secure_url) {
+    // --- STEP 2: Upload thumbnail ---
+    uploadedThumb = await safeUpload(thumbnail, 'image');
+    if (!uploadedThumb?.secure_url)
       throw new ApiError(500, 'Thumbnail upload failed');
-    }
 
-    // --- STEP 3: Upload video to Cloudinary with adaptive qualities ---
-    uploadedVideo = await uploadOnCloudinary(
-      compressedVideoPath,
-      'video',
-      req.io,
-      req.user._id
-    );
-    if (!uploadedVideo?.secure_url) {
-      throw new ApiError(500, 'Video file upload failed');
-    }
-
-    // --- STEP 4: Create video document in the database ---
+    // --- STEP 3: Create video document ---
     const newVideo = await Video.create({
       title: title.trim(),
       description: description.trim(),
@@ -191,33 +146,32 @@ const publishAVideo = asyncHandler(async (req, res) => {
         public_id: uploadedThumb.public_id,
       },
       videoFile: {
-        url: uploadedVideo.secure_url, // main video URL
-        public_id: uploadedVideo.public_id,
-        eager: uploadedVideo.eager || [], // adaptive resolutions
+        url: mainPlaylistUrl || '',
+        eager: variants.map((v) => ({
+          secure_url: v.playlistUrl,
+          width: v.width,
+          height: v.height,
+          quality: v.label,
+          bitrate: v.bitrate,
+        })),
         streaming_profile: 'hd',
-        duration: uploadedVideo.duration || 0,
+        duration: Math.round(duration || 0),
       },
       isPublished: true,
     });
 
-    return res
+    res
       .status(201)
       .json(new ApiResponse(201, newVideo, 'Video published successfully'));
-  } catch (error) {
-    // --- ERROR & CLEANUP ---
-    // If any step fails, delete any files that were successfully uploaded to Cloudinary.
-    if (uploadedThumb?.public_id) {
+  } catch (err) {
+    // --- CLEANUP ---
+    if (uploadedThumb?.public_id)
       await deleteFromCloudinary(uploadedThumb.public_id, 'image');
-    }
-    if (uploadedVideo?.public_id) {
-      await deleteFromCloudinary(uploadedVideo.public_id, 'video');
-    }
-    // Re-throw the error to be handled by the global error handler
-    throw error;
+    throw err;
   }
 });
 
-// GET VIDEO BY ID (with caching)
+// GET VIDEO BY ID
 const getVideoById = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const cacheKey = `video:${videoId}`;
@@ -235,7 +189,7 @@ const getVideoById = asyncHandler(async (req, res) => {
 
   const videoData = formatVideo(video.toObject());
 
-  if (isRedisEnabled) await redisSet(cacheKey, videoData, 600); // cache 10 mins
+  if (isRedisEnabled) await redisSet(cacheKey, videoData, 600);
 
   res.status(200).json({ success: true, data: videoData });
 });
@@ -254,7 +208,7 @@ const getVideosByUser = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  if (isRedisEnabled) await redisSet(cacheKey, videos, 3600); // cache 1 hr
+  if (isRedisEnabled) await redisSet(cacheKey, videos, 3600);
 
   res.status(200).json({ success: true, data: videos });
 });
@@ -272,15 +226,15 @@ const updateVideo = asyncHandler(async (req, res) => {
   if (description?.trim()) video.description = description.trim();
 
   if (newVideoFile) {
-    const uploadedVideo = await safeUpload(newVideoFile, 'video');
-    if (video.videoFile?.public_id)
-      await deleteFromCloudinary(video.videoFile.public_id, 'video');
+    const hlsUrls = await processVideoPipeline(
+      newVideoFile.path,
+      Date.now().toString()
+    );
     video.videoFile = {
-      url: uploadedVideo.url,
-      public_id: uploadedVideo.public_id,
-      eager: uploadedVideo.eager || [],
+      url: hlsUrls[0]?.url || '',
+      eager: hlsUrls.map((v) => ({ secure_url: v.url, label: v.label })),
       streaming_profile: 'hd',
-      duration: uploadedVideo.duration || 0,
+      duration: 0,
     };
   }
 
@@ -297,7 +251,7 @@ const updateVideo = asyncHandler(async (req, res) => {
   await video.save();
 
   if (isRedisEnabled) {
-    await redisDel(`video:${videoId}`); // invalidate cache
+    await redisDel(`video:${videoId}`);
     await redisDel(`user:${video.owner.toString()}:videos`);
   }
 
@@ -330,7 +284,6 @@ const deleteVideo = asyncHandler(async (req, res) => {
 });
 
 // RECORD VIEW
-// RECORD VIEW (count unique logged-in user views)
 const recordView = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const userId = req.user._id.toString();
@@ -339,17 +292,12 @@ const recordView = asyncHandler(async (req, res) => {
 
   if (isRedisEnabled) {
     const userViewedKey = `video:${videoId}:viewed`;
-
-    // Add userId to set, returns 1 if new, 0 if already present
     const added = await redisSAdd(userViewedKey, userId);
-
     if (added) {
-      // First time this user views this video → increment
       await redisIncr(`video:${videoId}:views`);
-      await redisSAdd('videos:dirty', videoId); // for batch DB sync
+      await redisSAdd('videos:dirty', videoId);
     }
   } else {
-    // Fallback: naive increment (duplicates possible without Redis)
     await Video.findByIdAndUpdate(videoId, { $inc: { viewsCount: 1 } });
   }
 
@@ -380,35 +328,6 @@ const getPopularVideos = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: videos });
 });
 
-// STREAM VIDEO (adaptive URLs)
-const streamVideo = asyncHandler(async (req, res) => {
-  const { videoId } = req.params;
-  const video = await getVideoOrFail(videoId);
-
-  const adaptiveStreams =
-    video.videoFile.eager?.filter((v) => v.format === 'mp4') || [];
-  if (!adaptiveStreams.length) {
-    return res.status(200).json({
-      success: true,
-      data: { url: video.videoFile.url },
-      message: 'Video URL fetched, adaptive streams pending',
-    });
-  }
-
-  const streams = adaptiveStreams.map((v) => ({
-    url: v.secure_url,
-    width: v.width,
-    height: v.height,
-    quality: v.quality,
-  }));
-
-  res.status(200).json({
-    success: true,
-    data: { streams },
-    message: 'Adaptive video streams fetched successfully',
-  });
-});
-
 // SEARCH VIDEOS
 const searchVideos = asyncHandler(async (req, res) => {
   const { searchterm } = req.query;
@@ -432,7 +351,7 @@ const searchVideos = asyncHandler(async (req, res) => {
     ],
   }).lean();
 
-  if (isRedisEnabled) await redisSet(cacheKey, videos, 300); // cache 5 mins
+  if (isRedisEnabled) await redisSet(cacheKey, videos, 300);
 
   res.status(200).json(new ApiResponse(200, videos, 'Search results fetched.'));
 });
@@ -444,18 +363,43 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
   await video.save();
 
   if (isRedisEnabled) {
-    await redisDel(`video:${video._id}`); // invalidate cache
+    await redisDel(`video:${video._id}`);
     await redisDel(`user:${video.owner.toString()}:videos`);
-    if (video.isPublished) {
+    if (video.isPublished)
       await redisSAdd('videos:popular', video._id.toString());
-    } else {
-      await redisSRem('videos:popular', video._id.toString());
-    }
+    else await redisSRem('videos:popular', video._id.toString());
   }
 
   res
     .status(200)
     .json(new ApiResponse(200, video, 'Video publish status toggled.'));
+});
+
+// STREAM VIDEO (adaptive URLs)
+const streamVideo = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+  const video = await getVideoOrFail(videoId);
+
+  const adaptiveStreams =
+    video.videoFile.eager?.map((v) => ({
+      url: v.secure_url,
+      width: v.width,
+      height: v.height,
+      quality: v.label,
+    })) || [];
+
+  if (!adaptiveStreams.length)
+    return res.status(200).json({
+      success: true,
+      data: { url: video.videoFile.url },
+      message: 'Video URL fetched, adaptive streams pending',
+    });
+
+  res.status(200).json({
+    success: true,
+    data: { streams: adaptiveStreams },
+    message: 'Adaptive video streams fetched successfully',
+  });
 });
 
 export {

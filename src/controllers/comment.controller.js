@@ -7,6 +7,7 @@ import {
   redisGet,
   redisSet,
   redisDel,
+  redisIncr,
   isRedisEnabled,
 } from '../utils/upstash.js';
 
@@ -47,9 +48,11 @@ const getVideoComments = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Invalid video ID');
   }
 
-  const cacheKey = `video:${videoId}:comments:page:${page}:limit:${limit}`;
-
   if (isRedisEnabled) {
+    const commentsVersion =
+      (await redisGet(`video:${videoId}:comments:version`)) || 1;
+    const cacheKey = `video:${videoId}:comments:v${commentsVersion}:page:${page}:limit:${limit}`;
+
     const cached = await redisGet(cacheKey);
     if (cached) {
       return res
@@ -66,7 +69,10 @@ const getVideoComments = asyncHandler(async (req, res) => {
     .populate('owner', 'username avatar'); // populate owner info
 
   if (isRedisEnabled) {
-    await redisSet(cacheKey, comments, 300); // cache for 5 mins
+    const commentsVersion =
+      (await redisGet(`video:${videoId}:comments:version`)) || 1;
+    const cacheKey = `video:${videoId}:comments:v${commentsVersion}:page:${page}:limit:${limit}`;
+    await redisSet(cacheKey, comments, 3600); // Cache for 1 hour
   }
 
   res
@@ -87,10 +93,8 @@ const addComment = asyncHandler(async (req, res) => {
     owner,
   });
 
-  // Invalidate comment cache for this video
   if (isRedisEnabled) {
-    const keysToInvalidate = [`video:${video}:comments:*`]; // pattern-based invalidation recommended via job
-    keysToInvalidate.forEach(async (keyPattern) => await redisDel(keyPattern));
+    await redisIncr(`video:${video}:comments:version`);
   }
 
   res
@@ -116,9 +120,10 @@ const updateComment = asyncHandler(async (req, res) => {
   comment.content = updateContent.trim();
   await comment.save({ validateBeforeSave: false });
 
-  // Invalidate Redis cache for the video
-  if (isRedisEnabled)
-    await redisDel(`video:${comment.video.toString()}:comments:*`);
+  if (isRedisEnabled) {
+    // Incrementing the version invalidates all paginated comment caches for this video
+    await redisIncr(`video:${comment.video.toString()}:comments:version`);
+  }
 
   res
     .status(200)
@@ -140,9 +145,10 @@ const deleteComment = asyncHandler(async (req, res) => {
 
   await comment.deleteOne();
 
-  // Invalidate Redis cache for the video
-  if (isRedisEnabled)
-    await redisDel(`video:${comment.video.toString()}:comments:*`);
+  if (isRedisEnabled) {
+    // Incrementing the version invalidates all paginated comment caches for this video
+    await redisIncr(`video:${comment.video.toString()}:comments:version`);
+  }
 
   res
     .status(200)

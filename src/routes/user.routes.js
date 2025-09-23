@@ -14,9 +14,9 @@ import {
   getFeed,
   recommendedVideos,
   recommendChannels,
-  getLikedVideos,
   getHistory,
 } from '../controllers/user.controller.js';
+import { getLikedVideos } from '../controllers/like.controller.js';
 import { upload } from '../middlewares/multer.middleware.js';
 import { verifyJWT } from '../middlewares/auth.middleware.js';
 
