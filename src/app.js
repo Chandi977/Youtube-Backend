@@ -24,6 +24,9 @@ import './config/passport.js'; // Your Passport strategies
 
 const app = express();
 
+// Trust the first proxy in front of the app, which is Render's load balancer.
+app.set('trust proxy', 1);
+
 // Create HTTP server for Socket.IO
 const server = createServer(app);
 

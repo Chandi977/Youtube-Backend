@@ -72,6 +72,7 @@ export const initializeSocket = (server) => {
   const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
 
   const io = new Server(server, {
+    transports: ['websocket', 'polling'], // Allow both for robustness
     cors: {
       origin: allowedOrigins,
       credentials: true,
