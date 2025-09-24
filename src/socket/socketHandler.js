@@ -36,13 +36,14 @@ const createRateLimit = (userId, action, maxRequests = 5, windowMs = 60000) => {
 
 // Socket authentication middleware
 const socketAuth = async (socket, next) => {
+  // No longer rejects the connection, just attaches the user if authenticated.
   try {
     const token =
       socket.handshake.auth.token ||
       socket.handshake.headers.authorization?.replace('Bearer ', '');
 
     if (!token) {
-      return next(new Error('No token provided'));
+      return next(); // Allow unauthenticated connection
     }
 
     const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
@@ -50,14 +51,12 @@ const socketAuth = async (socket, next) => {
       '-password -refreshToken'
     );
 
-    if (!user) {
-      return next(new Error('Invalid token'));
-    }
+    // Attach user to the socket object if found
+    if (user) socket.user = user;
 
-    socket.user = user;
     next();
   } catch (error) {
-    next(new Error('Authentication failed'));
+    next(); // Allow connection even if token is invalid/expired
   }
 };
 
@@ -86,385 +85,418 @@ export const initializeSocket = (server) => {
   io.use(socketAuth);
 
   io.on('connection', async (socket) => {
-    logger.info(
-      `User ${socket.user.username} connected with socket ID: ${socket.id}`
-    );
+    try {
+      if (socket.user) {
+        logger.info(
+          `Authenticated user ${socket.user.username} connected with socket ID: ${socket.id}`
+        );
+        // Join a room based on user ID for private notifications
+        socket.join(socket.user._id.toString());
+      } else {
+        logger.info(`Guest user connected with socket ID: ${socket.id}`);
+      }
 
-    // Join a room based on user ID for private notifications
-    socket.join(socket.user._id.toString());
-
-    // Join stream room
-    socket.on('join-stream', async (data) => {
-      try {
-        const { streamId, device = 'desktop', quality = '720p' } = data;
-
-        if (!streamId) {
-          socket.emit('error', { message: 'Stream ID is required' });
-          return;
+      // Join stream room
+      socket.on('join-stream', async (data) => {
+        if (!socket.user) {
+          return socket.emit('error', {
+            message: 'Authentication required to join a stream.',
+          });
         }
+        try {
+          const { streamId, device = 'desktop', quality = '720p' } = data;
 
-        // Validate stream
-        const liveStream = await LiveStream.findById(streamId);
-        if (!liveStream) {
-          socket.emit('error', { message: 'Stream not found' });
-          return;
-        }
+          if (!streamId) {
+            socket.emit('error', { message: 'Stream ID is required' });
+            return;
+          }
 
-        if (!liveStream.isLive) {
-          socket.emit('error', { message: 'Stream is not currently live' });
-          return;
-        }
+          // Validate stream
+          const liveStream = await LiveStream.findById(streamId);
+          if (!liveStream) {
+            socket.emit('error', { message: 'Stream not found' });
+            return;
+          }
 
-        // Join socket room
-        socket.join(streamId);
-        socket.currentStream = streamId;
+          if (!liveStream.isLive) {
+            socket.emit('error', { message: 'Stream is not currently live' });
+            return;
+          }
 
-        // Update or create viewer record
-        const existingViewer = await StreamViewer.findOne({
-          liveStream: streamId,
-          user: socket.user._id,
-          isActive: true,
-        });
+          // Join socket room
+          socket.join(streamId);
+          socket.currentStream = streamId;
 
-        if (existingViewer) {
-          existingViewer.socketId = socket.id;
-          existingViewer.device = device;
-          existingViewer.quality = quality;
-          existingViewer.lastSeen = new Date();
-          await existingViewer.save();
-        } else {
-          await StreamViewer.create({
+          // Update or create viewer record
+          const existingViewer = await StreamViewer.findOne({
             liveStream: streamId,
             user: socket.user._id,
-            socketId: socket.id,
-            device,
-            quality,
+            isActive: true,
           });
 
-          // Increment concurrent viewers
-          await liveStream.addViewer();
+          if (existingViewer) {
+            existingViewer.socketId = socket.id;
+            existingViewer.device = device;
+            existingViewer.quality = quality;
+            existingViewer.lastSeen = new Date();
+            await existingViewer.save();
+          } else {
+            await StreamViewer.create({
+              liveStream: streamId,
+              user: socket.user._id,
+              socketId: socket.id,
+              device,
+              quality,
+            });
+
+            // Increment concurrent viewers
+            await liveStream.addViewer();
+          }
+
+          // Get current viewer count
+          const viewerCount = await StreamViewer.getViewerCount(streamId);
+
+          // Emit to all viewers in the stream
+          socket.to(streamId).emit('viewer-joined', {
+            user: {
+              id: socket.user._id,
+              username: socket.user.username,
+              avatar: socket.user.avatar,
+            },
+            viewerCount,
+          });
+
+          // Send current stream data to the joining user
+          socket.emit('stream-joined', {
+            streamId,
+            viewerCount,
+            isLive: liveStream.isLive,
+          });
+
+          logger.info(`User ${socket.user.username} joined stream ${streamId}`);
+        } catch (error) {
+          logger.error('Error joining stream:', error);
+          socket.emit('error', { message: 'Failed to join stream' });
         }
+      });
 
-        // Get current viewer count
-        const viewerCount = await StreamViewer.getViewerCount(streamId);
+      // Leave stream room
+      socket.on('leave-stream', async (data) => {
+        if (!socket.user) return; // Silently ignore if not authenticated
+        try {
+          const { streamId } = data;
 
-        // Emit to all viewers in the stream
-        socket.to(streamId).emit('viewer-joined', {
-          user: {
-            id: socket.user._id,
-            username: socket.user.username,
-            avatar: socket.user.avatar,
-          },
-          viewerCount,
-        });
+          if (socket.currentStream && socket.currentStream === streamId) {
+            socket.leave(streamId);
+            socket.currentStream = null;
 
-        // Send current stream data to the joining user
-        socket.emit('stream-joined', {
-          streamId,
-          viewerCount,
-          isLive: liveStream.isLive,
-        });
+            // Update viewer record
+            const viewer = await StreamViewer.findOne({
+              liveStream: streamId,
+              user: socket.user._id,
+              isActive: true,
+            });
 
-        logger.info(`User ${socket.user.username} joined stream ${streamId}`);
-      } catch (error) {
-        logger.error('Error joining stream:', error);
-        socket.emit('error', { message: 'Failed to join stream' });
-      }
-    });
+            if (viewer) {
+              await viewer.leave();
 
-    // Leave stream room
-    socket.on('leave-stream', async (data) => {
-      try {
-        const { streamId } = data;
+              // Decrement viewer count
+              const liveStream = await LiveStream.findById(streamId);
+              if (liveStream) {
+                await liveStream.removeViewer();
 
-        if (socket.currentStream && socket.currentStream === streamId) {
-          socket.leave(streamId);
-          socket.currentStream = null;
+                const viewerCount = await StreamViewer.getViewerCount(streamId);
 
-          // Update viewer record
+                socket.to(streamId).emit('viewer-left', {
+                  userId: socket.user._id,
+                  viewerCount,
+                });
+              }
+            }
+
+            logger.info(`User ${socket.user.username} left stream ${streamId}`);
+          }
+        } catch (error) {
+          logger.error('Error leaving stream:', error);
+        }
+      });
+
+      // Real-time comment
+      socket.on('send-comment', async (data) => {
+        if (!socket.user) {
+          return socket.emit('error', {
+            message: 'Authentication required to send a comment.',
+          });
+        }
+        try {
+          const {
+            streamId,
+            content,
+            type = 'regular',
+            superChatAmount = 0,
+          } = data;
+
+          // Rate limiting
+          if (!createRateLimit(socket.user._id, 'comment', 10, 60000)) {
+            socket.emit('error', {
+              message: 'Rate limit exceeded. Please slow down.',
+            });
+            return;
+          }
+
+          if (!content?.trim()) {
+            socket.emit('error', { message: 'Comment content is required' });
+            return;
+          }
+
+          if (content.length > 500) {
+            socket.emit('error', {
+              message: 'Comment is too long (max 500 characters)',
+            });
+            return;
+          }
+
+          // Validate stream and user permissions
+          const liveStream = await LiveStream.findById(streamId);
+          if (!liveStream || !liveStream.isLive || !liveStream.chatEnabled) {
+            socket.emit('error', {
+              message: 'Cannot send comment to this stream',
+            });
+            return;
+          }
+
+          // Check if user is banned
+          const isBanned = liveStream.bannedUsers.some((ban) =>
+            ban.user.equals(socket.user._id)
+          );
+          if (isBanned) {
+            socket.emit('error', {
+              message: 'You are banned from this stream',
+            });
+            return;
+          }
+
+          // Check if user is viewing the stream
           const viewer = await StreamViewer.findOne({
             liveStream: streamId,
             user: socket.user._id,
+            isActive: true,
+          });
+
+          if (!viewer) {
+            socket.emit('error', {
+              message: 'You must be watching the stream to comment',
+            });
+            return;
+          }
+
+          // Calculate stream timestamp
+          const streamTimestamp = liveStream.startTime
+            ? Math.floor((new Date() - liveStream.startTime) / 1000)
+            : 0;
+
+          // Create comment
+          const comment = await LiveComment.create({
+            content: content.trim(),
+            liveStream: streamId,
+            owner: socket.user._id,
+            type,
+            superChatAmount: type === 'superchat' ? superChatAmount : 0,
+            streamTimestamp,
+            isHighlighted: type === 'superchat' || superChatAmount > 100,
+          });
+
+          await comment.populate('owner', 'username fullName avatar');
+
+          // Update stats
+          await Promise.all([
+            LiveStream.findByIdAndUpdate(streamId, {
+              $inc: { 'streamStats.totalMessages': 1 },
+            }),
+            viewer.incrementEngagement('messagesCount'),
+          ]);
+
+          // Emit to all stream viewers
+          io.to(streamId).emit('new-comment', {
+            comment: comment.toObject(),
+            streamId,
+            timestamp: new Date(),
+          });
+
+          // Special handling for super chats
+          if (type === 'superchat') {
+            io.to(streamId).emit('super-chat', {
+              comment: comment.toObject(),
+              amount: superChatAmount,
+              streamId,
+            });
+
+            await viewer.incrementEngagement(
+              'superChatsAmount',
+              superChatAmount
+            );
+          }
+
+          socket.emit('comment-sent', { commentId: comment._id });
+        } catch (error) {
+          logger.error('Error sending comment:', error);
+          socket.emit('error', { message: 'Failed to send comment' });
+        }
+      });
+
+      // Real-time like
+      socket.on('toggle-like', async (data) => {
+        if (!socket.user) {
+          return socket.emit('error', {
+            message: 'Authentication required to like a comment.',
+          });
+        }
+        try {
+          const { commentId, streamId } = data;
+
+          if (!commentId || !streamId) {
+            socket.emit('error', {
+              message: 'Comment ID and Stream ID are required',
+            });
+            return;
+          }
+
+          // Rate limiting
+          if (!createRateLimit(socket.user._id, 'like', 30, 60000)) {
+            socket.emit('error', { message: 'Rate limit exceeded for likes' });
+            return;
+          }
+
+          const comment = await LiveComment.findById(commentId);
+          if (!comment) {
+            socket.emit('error', { message: 'Comment not found' });
+            return;
+          }
+
+          const isLiked = comment.likes.includes(socket.user._id);
+          let updatedComment;
+
+          if (isLiked) {
+            updatedComment = await comment.removeLike(socket.user._id);
+          } else {
+            updatedComment = await comment.addLike(socket.user._id);
+
+            // Update viewer engagement
+            const viewer = await StreamViewer.findOne({
+              liveStream: streamId,
+              user: socket.user._id,
+              isActive: true,
+            });
+            if (viewer) {
+              await viewer.incrementEngagement('likesGiven');
+            }
+          }
+
+          // Emit to all stream viewers
+          io.to(streamId).emit('comment-like-update', {
+            commentId,
+            likesCount: updatedComment.likesCount,
+            isLiked: !isLiked,
+            userId: socket.user._id,
+          });
+        } catch (error) {
+          logger.error('Error toggling like:', error);
+          socket.emit('error', { message: 'Failed to toggle like' });
+        }
+      });
+
+      // Stream quality change
+      socket.on('change-quality', async (data) => {
+        if (!socket.user) return;
+        try {
+          const { streamId, quality } = data;
+
+          if (!streamId || !quality) {
+            return;
+          }
+
+          const viewer = await StreamViewer.findOne({
+            liveStream: streamId,
+            user: socket.user._id,
+            isActive: true,
+          });
+
+          if (viewer) {
+            viewer.quality = quality;
+            viewer.lastSeen = new Date();
+            await viewer.save();
+          }
+        } catch (error) {
+          logger.error('Error changing quality:', error);
+        }
+      });
+
+      // Heartbeat to track active viewers
+      socket.on('heartbeat', async (data) => {
+        try {
+          const { streamId } = data;
+
+          const viewer = await StreamViewer.findOne({
+            socketId: socket.id,
+            isActive: true,
+          });
+
+          if (viewer) {
+            viewer.lastSeen = new Date();
+            await viewer.save();
+          }
+        } catch (error) {
+          logger.error('Error updating heartbeat:', error);
+        }
+      });
+
+      // Handle disconnect
+      socket.on('disconnect', async () => {
+        try {
+          const username = socket.user?.username || 'Guest';
+          logger.info(`User ${username} disconnected`);
+
+          // Update viewer record only if the user was authenticated
+          if (!socket.user) return;
+
+          const viewer = await StreamViewer.findOne({
+            socketId: socket.id,
             isActive: true,
           });
 
           if (viewer) {
             await viewer.leave();
 
-            // Decrement viewer count
-            const liveStream = await LiveStream.findById(streamId);
-            if (liveStream) {
+            // Update stream viewer count
+            const liveStream = await LiveStream.findById(viewer.liveStream);
+            if (liveStream && liveStream.isLive) {
               await liveStream.removeViewer();
 
-              const viewerCount = await StreamViewer.getViewerCount(streamId);
+              const viewerCount = await StreamViewer.getViewerCount(
+                viewer.liveStream
+              );
 
-              socket.to(streamId).emit('viewer-left', {
+              socket.to(viewer.liveStream.toString()).emit('viewer-left', {
                 userId: socket.user._id,
                 viewerCount,
               });
             }
           }
 
-          logger.info(`User ${socket.user.username} left stream ${streamId}`);
-        }
-      } catch (error) {
-        logger.error('Error leaving stream:', error);
-      }
-    });
-
-    // Real-time comment
-    socket.on('send-comment', async (data) => {
-      try {
-        const {
-          streamId,
-          content,
-          type = 'regular',
-          superChatAmount = 0,
-        } = data;
-
-        // Rate limiting
-        if (!createRateLimit(socket.user._id, 'comment', 10, 60000)) {
-          socket.emit('error', {
-            message: 'Rate limit exceeded. Please slow down.',
-          });
-          return;
-        }
-
-        if (!content?.trim()) {
-          socket.emit('error', { message: 'Comment content is required' });
-          return;
-        }
-
-        if (content.length > 500) {
-          socket.emit('error', {
-            message: 'Comment is too long (max 500 characters)',
-          });
-          return;
-        }
-
-        // Validate stream and user permissions
-        const liveStream = await LiveStream.findById(streamId);
-        if (!liveStream || !liveStream.isLive || !liveStream.chatEnabled) {
-          socket.emit('error', {
-            message: 'Cannot send comment to this stream',
-          });
-          return;
-        }
-
-        // Check if user is banned
-        const isBanned = liveStream.bannedUsers.some((ban) =>
-          ban.user.equals(socket.user._id)
-        );
-        if (isBanned) {
-          socket.emit('error', { message: 'You are banned from this stream' });
-          return;
-        }
-
-        // Check if user is viewing the stream
-        const viewer = await StreamViewer.findOne({
-          liveStream: streamId,
-          user: socket.user._id,
-          isActive: true,
-        });
-
-        if (!viewer) {
-          socket.emit('error', {
-            message: 'You must be watching the stream to comment',
-          });
-          return;
-        }
-
-        // Calculate stream timestamp
-        const streamTimestamp = liveStream.startTime
-          ? Math.floor((new Date() - liveStream.startTime) / 1000)
-          : 0;
-
-        // Create comment
-        const comment = await LiveComment.create({
-          content: content.trim(),
-          liveStream: streamId,
-          owner: socket.user._id,
-          type,
-          superChatAmount: type === 'superchat' ? superChatAmount : 0,
-          streamTimestamp,
-          isHighlighted: type === 'superchat' || superChatAmount > 100,
-        });
-
-        await comment.populate('owner', 'username fullName avatar');
-
-        // Update stats
-        await Promise.all([
-          LiveStream.findByIdAndUpdate(streamId, {
-            $inc: { 'streamStats.totalMessages': 1 },
-          }),
-          viewer.incrementEngagement('messagesCount'),
-        ]);
-
-        // Emit to all stream viewers
-        io.to(streamId).emit('new-comment', {
-          comment: comment.toObject(),
-          streamId,
-          timestamp: new Date(),
-        });
-
-        // Special handling for super chats
-        if (type === 'superchat') {
-          io.to(streamId).emit('super-chat', {
-            comment: comment.toObject(),
-            amount: superChatAmount,
-            streamId,
-          });
-
-          await viewer.incrementEngagement('superChatsAmount', superChatAmount);
-        }
-
-        socket.emit('comment-sent', { commentId: comment._id });
-      } catch (error) {
-        logger.error('Error sending comment:', error);
-        socket.emit('error', { message: 'Failed to send comment' });
-      }
-    });
-
-    // Real-time like
-    socket.on('toggle-like', async (data) => {
-      try {
-        const { commentId, streamId } = data;
-
-        if (!commentId || !streamId) {
-          socket.emit('error', {
-            message: 'Comment ID and Stream ID are required',
-          });
-          return;
-        }
-
-        // Rate limiting
-        if (!createRateLimit(socket.user._id, 'like', 30, 60000)) {
-          socket.emit('error', { message: 'Rate limit exceeded for likes' });
-          return;
-        }
-
-        const comment = await LiveComment.findById(commentId);
-        if (!comment) {
-          socket.emit('error', { message: 'Comment not found' });
-          return;
-        }
-
-        const isLiked = comment.likes.includes(socket.user._id);
-        let updatedComment;
-
-        if (isLiked) {
-          updatedComment = await comment.removeLike(socket.user._id);
-        } else {
-          updatedComment = await comment.addLike(socket.user._id);
-
-          // Update viewer engagement
-          const viewer = await StreamViewer.findOne({
-            liveStream: streamId,
-            user: socket.user._id,
-            isActive: true,
-          });
-          if (viewer) {
-            await viewer.incrementEngagement('likesGiven');
+          // Clean up rate limiters
+          for (const [key] of rateLimiters.entries()) {
+            if (socket.user && key.startsWith(socket.user._id.toString())) {
+              rateLimiters.delete(key);
+            }
           }
+        } catch (error) {
+          logger.error('Error handling disconnect:', error);
         }
-
-        // Emit to all stream viewers
-        io.to(streamId).emit('comment-like-update', {
-          commentId,
-          likesCount: updatedComment.likesCount,
-          isLiked: !isLiked,
-          userId: socket.user._id,
-        });
-      } catch (error) {
-        logger.error('Error toggling like:', error);
-        socket.emit('error', { message: 'Failed to toggle like' });
-      }
-    });
-
-    // Stream quality change
-    socket.on('change-quality', async (data) => {
-      try {
-        const { streamId, quality } = data;
-
-        if (!streamId || !quality) {
-          return;
-        }
-
-        const viewer = await StreamViewer.findOne({
-          liveStream: streamId,
-          user: socket.user._id,
-          isActive: true,
-        });
-
-        if (viewer) {
-          viewer.quality = quality;
-          viewer.lastSeen = new Date();
-          await viewer.save();
-        }
-      } catch (error) {
-        logger.error('Error changing quality:', error);
-      }
-    });
-
-    // Heartbeat to track active viewers
-    socket.on('heartbeat', async (data) => {
-      try {
-        const { streamId } = data;
-
-        const viewer = await StreamViewer.findOne({
-          socketId: socket.id,
-          isActive: true,
-        });
-
-        if (viewer) {
-          viewer.lastSeen = new Date();
-          await viewer.save();
-        }
-      } catch (error) {
-        logger.error('Error updating heartbeat:', error);
-      }
-    });
-
-    // Handle disconnect
-    socket.on('disconnect', async () => {
-      try {
-        logger.info(`User ${socket.user.username} disconnected`);
-
-        // Update viewer record
-        const viewer = await StreamViewer.findOne({
-          socketId: socket.id,
-          isActive: true,
-        });
-
-        if (viewer) {
-          await viewer.leave();
-
-          // Update stream viewer count
-          const liveStream = await LiveStream.findById(viewer.liveStream);
-          if (liveStream && liveStream.isLive) {
-            await liveStream.removeViewer();
-
-            const viewerCount = await StreamViewer.getViewerCount(
-              viewer.liveStream
-            );
-
-            socket.to(viewer.liveStream.toString()).emit('viewer-left', {
-              userId: socket.user._id,
-              viewerCount,
-            });
-          }
-        }
-
-        // Clean up rate limiters
-        for (const [key] of rateLimiters.entries()) {
-          if (key.startsWith(socket.user._id.toString())) {
-            rateLimiters.delete(key);
-          }
-        }
-      } catch (error) {
-        logger.error('Error handling disconnect:', error);
-      }
-    });
+      });
+    } catch (err) {
+      logger.error('Socket connection error:', err);
+      socket.disconnect(true); // Force disconnect on critical error
+    }
   });
 
   // Clean up inactive rate limiters every 5 minutes
