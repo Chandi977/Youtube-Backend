@@ -21,8 +21,8 @@ const videoSchema = new Schema(
         default: 'hd',
       }, // Adaptive streaming profile
       eager: {
-        type: Array,
-        default: [],
+        type: Object, // Changed from Array to Object
+        default: {},
       }, // Optional resolutions info from Cloudinary
     },
     thumbnail: {

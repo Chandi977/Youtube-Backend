@@ -12,6 +12,7 @@ import compression from 'compression';
 import fetch from 'node-fetch';
 import { createServer } from 'http';
 
+import { createVideoWorker } from './workers/videoWorker.js';
 import { syncLikes } from './workers/syncLikes.js';
 import logger, { requestLogger } from './utils/logger.js';
 import { isRedisEnabled } from './utils/upstash.js';
@@ -141,6 +142,7 @@ import Subscription from './routes/subscription.routes.js';
 import tweet from './routes/tweet.routes.js';
 import upstashRoutes from './routes/upstash.routes.js';
 import liveStreamRouter from './routes/livestream.routes.js'; // New live streaming routes
+import jobRoutes from './routes/job.routes.js'; // New job routes
 import authRoutes from './routes/auth.routes.js'; // New auth routes
 
 // Existing routes
@@ -154,6 +156,7 @@ app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/subscriptions', Subscription);
 app.use('/api/v1/tweets', tweet);
 app.use('/api/v1', upstashRoutes);
+app.use('/api/v1/jobs', jobRoutes);
 app.use('/api/v1/auth', authRoutes);
 
 // New live streaming routes
@@ -167,6 +170,9 @@ app.use(errorHandler);
 // ------------------------
 // Workers
 // ------------------------
+// Start video worker
+const videoWorker = createVideoWorker(io);
+
 const SYNC_LIKES_INTERVAL = Number(process.env.SYNC_LIKES_INTERVAL_MS) || 30000;
 if (isRedisEnabled) {
   setInterval(async () => {
@@ -177,6 +183,13 @@ if (isRedisEnabled) {
     }
   }, SYNC_LIKES_INTERVAL);
 }
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully...');
+  await videoWorker.close();
+  process.exit(0);
+});
 
 // ------------------------
 // Heart Ticker

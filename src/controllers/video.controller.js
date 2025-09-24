@@ -19,7 +19,7 @@ import {
   redisSRem,
 } from '../utils/upstash.js';
 import { processVideoPipeline } from '../utils/videoProcessor.js';
-
+import { videoQueue } from '../queues/videoQueue.js';
 // ====================== Helpers ======================
 
 // Get video by ID or throw 404
@@ -45,13 +45,7 @@ const formatVideo = (video) => ({
   ...video,
   videoFile: {
     url: video.videoFile.url,
-    adaptive:
-      video.videoFile.eager?.map((v) => ({
-        url: v.secure_url,
-        width: v.width,
-        height: v.height,
-        quality: v.label,
-      })) || [],
+    adaptive: video.videoFile.eager || {}, // 'eager' is now an object
   },
 });
 
@@ -119,50 +113,55 @@ const publishAVideo = asyncHandler(async (req, res) => {
   const thumbnail = req.files?.['thumbnail']?.[0];
 
   if (!title?.trim() || !description?.trim() || !videoFile || !thumbnail)
-    throw new ApiError(400, 'All fields are required');
+    throw new ApiError(
+      400,
+      'Title, description, video file, and thumbnail are required'
+    );
 
   let uploadedThumb = null;
+  let videoRecord = null;
 
   try {
-    // --- STEP 1: Process video pipeline (compress + HLS) ---
-    const {
-      masterPlaylist: mainPlaylistUrl,
-      duration,
-      variants,
-    } = await processVideoPipeline(videoFile.path, req.io, req.user?._id);
-
-    // --- STEP 2: Upload thumbnail ---
+    // --- STEP 1: Upload thumbnail immediately for a better UX ---
     uploadedThumb = await safeUpload(thumbnail, 'image');
     if (!uploadedThumb?.secure_url)
       throw new ApiError(500, 'Thumbnail upload failed');
 
-    // --- STEP 3: Create video document ---
-    const newVideo = await Video.create({
+    // --- STEP 2: Create a placeholder video document in the database ---
+    videoRecord = await Video.create({
       title: title.trim(),
       description: description.trim(),
       owner: req.user._id,
+      status: 'processing', // Initial status
       thumbnail: {
         url: uploadedThumb.secure_url,
         public_id: uploadedThumb.public_id,
       },
-      videoFile: {
-        url: mainPlaylistUrl || '',
-        eager: variants.map((v) => ({
-          secure_url: v.playlistUrl,
-          width: v.width,
-          height: v.height,
-          quality: v.label,
-          bitrate: v.bitrate,
-        })),
-        streaming_profile: 'hd',
-        duration: Math.round(duration || 0),
-      },
-      isPublished: true,
+      // videoFile details will be filled in by the worker
     });
 
-    res
-      .status(201)
-      .json(new ApiResponse(201, newVideo, 'Video published successfully'));
+    // --- STEP 3: Add video processing job to the queue ---
+    const job = await videoQueue.add('video-processing', {
+      videoLocalPath: videoFile.path,
+      thumbnailLocalPath: thumbnail.path, // Keep for potential reprocessing
+      userId: req.user._id.toString(),
+      videoData: {
+        videoId: videoRecord._id,
+        title: videoRecord.title,
+      },
+    });
+
+    // --- STEP 4: Respond to the client immediately ---
+    res.status(202).json(
+      new ApiResponse(
+        202,
+        {
+          jobId: job.id,
+          video: videoRecord, // Send initial video data
+        },
+        'Video is being processed. You will be notified upon completion.'
+      )
+    );
   } catch (err) {
     // --- CLEANUP ---
     if (uploadedThumb?.public_id)
@@ -380,13 +379,28 @@ const streamVideo = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const video = await getVideoOrFail(videoId);
 
-  const adaptiveStreams =
-    video.videoFile.eager?.map((v) => ({
-      url: v.secure_url,
+  let adaptiveStreams = [];
+
+  if (Array.isArray(video.videoFile.eager)) {
+    // Handle old format: array of objects where each object has 'secure_url'
+    adaptiveStreams = video.videoFile.eager.map((v) => ({
+      url: v.secure_url, // Old format used secure_url directly
       width: v.width,
       height: v.height,
       quality: v.label,
-    })) || [];
+    }));
+  } else if (
+    typeof video.videoFile.eager === 'object' &&
+    video.videoFile.eager !== null
+  ) {
+    // Handle new format: object mapping resolution labels to variant data, where each variant has 'playlistUrl'
+    adaptiveStreams = Object.values(video.videoFile.eager).map((v) => ({
+      url: v.playlistUrl, // New format uses playlistUrl
+      width: v.width,
+      height: v.height,
+      quality: v.label,
+    }));
+  }
 
   if (!adaptiveStreams.length)
     return res.status(200).json({

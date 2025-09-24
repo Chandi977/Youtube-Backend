@@ -41,7 +41,7 @@ router.post(
     { name: 'videoFile', maxCount: 1 },
     { name: 'thumbnail', maxCount: 1 },
   ]),
-  publishAVideo
+  publishAVideo // This now points to the async controller
 );
 
 // Update video

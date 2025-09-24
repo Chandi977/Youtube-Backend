@@ -107,7 +107,7 @@ const processResolution = (
       }
     });
 
-    const scaleFilter = `scale=-2:${res.height}:force_original_aspect_ratio=decrease`;
+    const scaleFilter = `scale=-2:${res.height}:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2`;
 
     ffmpeg(inputPath)
       .outputOptions([
@@ -290,18 +290,34 @@ export const processVideoPipeline = async (
     throw err;
   }
 
-  const duration = await new Promise((res, rej) => {
+  const { duration, height: videoHeight } = await new Promise((res, rej) => {
     ffmpeg.ffprobe(compressed, (err, metadata) => {
-      if (err) return rej(err);
-      return res(metadata.format.duration || 0);
+      if (err) {
+        return rej(new ApiError(500, 'Failed to read video metadata.'));
+      }
+      const videoStream = metadata.streams.find(
+        (s) => s.codec_type === 'video'
+      );
+      const duration = metadata.format.duration || 0;
+      const height = videoStream ? videoStream.height : 0;
+      if (height === 0) {
+        logger.warn('[Pipeline] Could not determine video height.');
+      }
+      return res({ duration, height });
     });
   });
-  logger.info(`[Pipeline] Duration: ${duration}s`);
+  logger.info(`[Pipeline] Duration: ${duration}s, Height: ${videoHeight}px`);
 
   // For debugging on resource-constrained machines, you can set this to 1
   const CONCURRENCY_LIMIT = 3;
   const tasks = resolutions.map((res) => async () => {
     try {
+      if (videoHeight > 0 && res.height > videoHeight) {
+        logger.info(
+          `[Pipeline] Skipping ${res.label} as source height (${videoHeight}p) is smaller.`
+        );
+        return null;
+      }
       logger.info(`[Pipeline] Starting ${res.label}`);
       const { folder } = await processResolution(
         compressed,

@@ -70,6 +70,12 @@ VideoTube is a backend service for a video streaming platform. It handles user a
    CLOUDINARY_API_KEY=your_cloudinary_api_key
    CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
+   # Upstash Redis for Caching (REST API) & BullMQ (Direct Connection)
+   UPSTASH_REDIS_REST_URL=your_upstash_rest_url
+   UPSTASH_REDIS_REST_TOKEN=your_upstash_rest_token
+   UPSTASH_REDIS_URL=your_upstash_direct_connection_url # e.g., rediss://...
+   REDIS_PREFIX=ytclone # Optional prefix for cache keys
+
    RTMP_SERVER_URL=rtmp://localhost/live
    # OAuth & URLs
    CORS_ORIGIN=http://localhost:5173,https://your-production-frontend.com

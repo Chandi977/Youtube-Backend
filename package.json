@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "nodemon -r dotenv/config src/index.js",
     "start": "node -r dotenv/config src/index.js",
-    "test": "jest",
-    "format": "prettier --write \"src/**/*.js\""
+    "worker": "node -r dotenv/config src/workers/videoWorker.js",
+    "format": "prettier --write \"src/**/*.js\"",
+    "test": "jest"
   },
   "keywords": [
     "Javascript",
