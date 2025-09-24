@@ -30,9 +30,6 @@ app.set('trust proxy', 1);
 // Create HTTP server for Socket.IO
 const server = createServer(app);
 
-// Initialize Socket.IO
-const io = initializeSocket(server);
-
 // Make io available in requests for live streaming
 app.use((req, res, next) => {
   req.io = io;
@@ -76,6 +73,9 @@ const envOrigins = process.env.CORS_ORIGIN
 const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
 
 console.log('Allowed Origins:', allowedOrigins);
+
+// Initialize Socket.IO after defining allowedOrigins
+const io = initializeSocket(server, allowedOrigins);
 
 app.use(
   cors({

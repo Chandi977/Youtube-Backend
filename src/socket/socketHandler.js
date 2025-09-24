@@ -60,17 +60,7 @@ const socketAuth = async (socket, next) => {
   }
 };
 
-export const initializeSocket = (server) => {
-  // Define a base set of allowed origins, including localhost and all Vercel domains.
-  const baseAllowedOrigins = [
-    'http://localhost:5173', // Local development frontend
-    /\.vercel\.app$/, // Matches any Vercel deployment URL
-  ];
-  const envOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
-    : [];
-  const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
-
+export const initializeSocket = (server, allowedOrigins) => {
   const io = new Server(server, {
     transports: ['websocket', 'polling'], // Allow both for robustness
     cors: {
