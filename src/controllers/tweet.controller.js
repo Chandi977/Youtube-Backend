@@ -1,6 +1,5 @@
 import mongoose, { isValidObjectId } from 'mongoose';
 import { Tweet } from '../models/tweet.model.js';
-import { User } from '../models/user.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -23,33 +22,31 @@ const createTweet = asyncHandler(async (req, res) => {
   if (!content?.trim() && !req.file)
     throw new ApiError(400, 'Tweet must have text or image');
 
-  let parentTweet = null;
-  if (parentTweetId) {
-    if (!isValidObjectId(parentTweetId))
-      throw new ApiError(400, 'Invalid parent tweet ID');
-    parentTweet = await Tweet.findById(parentTweetId);
-    if (!parentTweet) throw new ApiError(404, 'Parent tweet not found');
-  }
+  if (parentTweetId && !mongoose.isValidObjectId(parentTweetId))
+    throw new ApiError(400, 'Invalid parent tweet ID');
 
-  let imageUrl = null;
+  let imageData = null;
   if (req.file) {
     const uploaded = await uploadOnCloudinary(req.file.path, 'image');
-    imageUrl = uploaded.secure_url;
+    imageData = {
+      url: uploaded.secure_url,
+      publicId: uploaded.public_id,
+    };
   }
 
   const newTweet = await Tweet.create({
-    content,
-    image: imageUrl,
+    content: content?.trim(),
+    image: imageData,
     owner,
     parentTweet: parentTweetId || null,
   });
 
   if (isRedisEnabled) {
     await redisDel(`user:${owner}:tweets`);
-    if (parentTweetId) await redisDel(`tweet:${parentTweetId}:replies`);
+    if (parentTweetId) await redisDel(`tweet:${parentTweetId}:repliesTree`);
   }
 
-  return res
+  res
     .status(201)
     .json(new ApiResponse(201, newTweet, 'Tweet created successfully'));
 });
@@ -78,28 +75,118 @@ const getUserTweets = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, tweets, 'Tweets fetched successfully'));
 });
 
-// -------------------- GET TWEET REPLIES --------------------
+// -------------------- GET TWEET REPLIES (Nested) --------------------
+// -------------------- GET TWEET REPLIES (nested tree) --------------------
 const getTweetReplies = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
+
   if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
 
+  // Try to fetch from Redis cache first
   if (isRedisEnabled) {
-    const cached = await redisGet(`tweet:${tweetId}:replies`);
+    const cached = await redisGet(`tweet:${tweetId}:repliesTree`);
     if (cached)
       return res
         .status(200)
         .json(new ApiResponse(200, cached, 'Fetched from cache'));
   }
 
-  const replies = await Tweet.find({ parentTweet: tweetId })
-    .populate('owner', 'username avatar')
-    .sort({ createdAt: 1 });
+  // Fetch all replies recursively using graphLookup
+  const pipeline = [
+    { $match: { _id: new mongoose.Types.ObjectId(tweetId) } },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'owner',
+        foreignField: '_id',
+        as: 'owner',
+      },
+    },
+    { $unwind: '$owner' },
+    {
+      $graphLookup: {
+        from: 'tweets',
+        startWith: '$_id',
+        connectFromField: '_id',
+        connectToField: 'parentTweet',
+        as: 'allReplies',
+        depthField: 'level',
+      },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'allReplies.owner',
+        foreignField: '_id',
+        as: 'replyUsers',
+      },
+    },
+    {
+      $addFields: {
+        replies: {
+          $map: {
+            input: '$allReplies',
+            as: 'r',
+            in: {
+              _id: '$$r._id',
+              content: '$$r.content',
+              image: '$$r.image',
+              parentTweet: '$$r.parentTweet',
+              createdAt: '$$r.createdAt',
+              owner: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: '$replyUsers',
+                      cond: { $eq: ['$$this._id', '$$r.owner'] },
+                    },
+                  },
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+  ];
 
-  if (isRedisEnabled) await redisSet(`tweet:${tweetId}:replies`, replies);
+  const [tweetData] = await Tweet.aggregate(pipeline);
+  if (!tweetData) throw new ApiError(404, 'Tweet not found');
+
+  // Function to build nested tree
+  const buildTree = (allReplies, parentId = tweetId) => {
+    return allReplies
+      .filter((r) =>
+        r.parentTweet ? r.parentTweet.toString() === parentId.toString() : false
+      )
+      .map((r) => ({
+        ...r,
+        replies: buildTree(allReplies, r._id),
+      }));
+  };
+
+  const tweetWithRepliesTree = {
+    _id: tweetData._id,
+    content: tweetData.content,
+    image: tweetData.image,
+    owner: tweetData.owner,
+    createdAt: tweetData.createdAt,
+    replies: buildTree(tweetData.replies),
+  };
+
+  if (isRedisEnabled)
+    await redisSet(`tweet:${tweetId}:repliesTree`, tweetWithRepliesTree);
 
   return res
     .status(200)
-    .json(new ApiResponse(200, replies, 'Replies fetched successfully'));
+    .json(
+      new ApiResponse(
+        200,
+        tweetWithRepliesTree,
+        'Tweet and replies fetched successfully'
+      )
+    );
 });
 
 // -------------------- LIKE / UNLIKE TWEET --------------------
@@ -124,14 +211,12 @@ const toggleLikeTweet = asyncHandler(async (req, res) => {
 
   await tweet.save();
 
-  // Cache update
   if (isRedisEnabled) await redisSet(`tweet:${tweetId}`, tweet);
 
   return res.status(200).json(new ApiResponse(200, tweet, message));
 });
 
 // -------------------- UPDATE TWEET --------------------
-
 const updateTweet = asyncHandler(async (req, res) => {
   const { tweetId, content } = req.body;
   const userId = req.user.id;
@@ -144,19 +229,14 @@ const updateTweet = asyncHandler(async (req, res) => {
   if (tweet.owner.toString() !== userId)
     throw new ApiError(403, 'You cannot edit this tweet');
 
-  // Update content
   if (content?.trim()) tweet.content = content.trim();
 
-  // Update image if new file uploaded
   if (req.file) {
-    // Delete old image from Cloudinary
-    if (tweet.image) {
-      const publicId = tweet.image.split('/').slice(-1)[0].split('.')[0];
-      await deleteFromCloudinary(publicId, 'image');
-    }
+    if (tweet.image?.publicId)
+      await deleteFromCloudinary(tweet.image.publicId, 'image');
 
     const uploaded = await uploadOnCloudinary(req.file.path, 'image');
-    tweet.image = uploaded.secure_url;
+    tweet.image = { url: uploaded.secure_url, publicId: uploaded.public_id };
   }
 
   await tweet.save({ validateBeforeSave: false });
@@ -168,7 +248,7 @@ const updateTweet = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, tweet, 'Tweet updated successfully'));
 });
 
-// -------------------- DELETE TWEET --------------------
+// -------------------- DELETE TWEET (with recursive nested replies) --------------------
 const deleteTweet = asyncHandler(async (req, res) => {
   const { tweetId } = req.body;
   const userId = req.user.id;
@@ -177,27 +257,69 @@ const deleteTweet = asyncHandler(async (req, res) => {
 
   const tweet = await Tweet.findById(tweetId);
   if (!tweet) throw new ApiError(404, 'Tweet not found');
+
   if (tweet.owner.toString() !== userId)
     throw new ApiError(403, 'Cannot delete this tweet');
 
-  // Delete image from Cloudinary if exists
-  if (tweet.image) {
-    const publicId = tweet.image.split('/').slice(-1)[0].split('.')[0];
-    await deleteFromCloudinary(publicId, 'image');
+  // Recursive deletion to get all nested replies
+  const pipeline = [
+    { $match: { _id: new mongoose.Types.ObjectId(tweetId) } },
+    {
+      $graphLookup: {
+        from: 'tweets',
+        startWith: '$_id',
+        connectFromField: '_id',
+        connectToField: 'parentTweet',
+        as: 'allReplies',
+      },
+    },
+    {
+      $project: {
+        idsToDelete: {
+          $concatArrays: [['$_id'], '$allReplies._id'],
+        },
+      },
+    },
+  ];
+
+  const [result] = await Tweet.aggregate(pipeline);
+  if (!result || !result.idsToDelete.length)
+    throw new ApiError(404, 'Tweet not found');
+
+  const tweetsToDelete = await Tweet.find({ _id: { $in: result.idsToDelete } });
+
+  // Delete images from Cloudinary
+  for (const t of tweetsToDelete) {
+    if (t.image) {
+      const publicId = t.image.split('/').slice(-1)[0].split('.')[0];
+      await deleteFromCloudinary(publicId, 'image');
+    }
   }
 
-  await Tweet.deleteOne({ _id: tweetId });
+  // Delete all tweets
+  await Tweet.deleteMany({ _id: { $in: result.idsToDelete } });
 
-  // Cache invalidation
+  // Redis cache invalidation
   if (isRedisEnabled) {
     await redisDel(`tweet:${tweetId}`);
     await redisDel(`user:${userId}:tweets`);
-    if (tweet.parentTweet) await redisDel(`tweet:${tweet.parentTweet}:replies`);
+    if (tweet.parentTweet)
+      await redisDel(`tweet:${tweet.parentTweet}:repliesTree`);
+
+    for (const t of tweetsToDelete) {
+      await redisDel(`tweet:${t._id}:repliesTree`);
+    }
   }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, null, 'Tweet deleted successfully'));
+    .json(
+      new ApiResponse(
+        200,
+        null,
+        'Tweet and all nested replies deleted successfully'
+      )
+    );
 });
 
 // -------------------- SHARE / UNSHARE TWEET --------------------
