@@ -17,52 +17,86 @@ import {
   redisSRem,
   isRedisEnabled,
 } from '../utils/upstash.js';
-import { getVideoOrFail } from './video.controller.js';
 
-/* ----------------------------- Toggle Video Like ----------------------------- */
+/* ----------------------------- Helper: Toggle Like ----------------------------- */
+const toggleLike = async ({
+  entityType,
+  entityId,
+  userId,
+  model,
+  redisLikeKey,
+  redisUserKey,
+  dirtySet,
+}) => {
+  let hasLiked = false;
+
+  if (isRedisEnabled) {
+    // Check if entity exists
+    if (!(await model.findById(entityId)))
+      throw new ApiError(404, `${entityType} not found`);
+    const likedSet = await redisSMembers(redisUserKey);
+    hasLiked = likedSet.includes(entityId);
+  } else {
+    hasLiked = !!(await Like.findOne({
+      [entityType]: entityId,
+      likedBy: userId,
+    }));
+  }
+  if (!hasLiked && !(await model.findById(entityId)))
+    throw new ApiError(404, `${entityType} not found`);
+
+  if (hasLiked) {
+    if (isRedisEnabled) {
+      await redisDecr(redisLikeKey);
+      await redisSRem(redisUserKey, entityId);
+      if (dirtySet) await redisSAdd(dirtySet, entityId);
+    }
+    await Like.deleteOne({ [entityType]: entityId, likedBy: userId });
+    return { liked: false, message: `${entityType} unliked` };
+  } else {
+    if (isRedisEnabled) {
+      await redisIncr(redisLikeKey);
+      await redisSAdd(redisUserKey, entityId);
+      if (dirtySet) await redisSAdd(dirtySet, entityId);
+    }
+    // Use upsert to prevent duplicates
+    await Like.findOneAndUpdate(
+      { [entityType]: entityId, likedBy: userId },
+      { [entityType]: entityId, likedBy: userId },
+      { upsert: true, new: true }
+    );
+    return { liked: true, message: `${entityType} liked` };
+  }
+};
+
+/* ----------------------------- Toggle APIs ----------------------------- */
 const toggleVideoLike = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const userId = req.user.id;
 
   if (!isValidObjectId(videoId)) throw new ApiError(400, 'Invalid video ID');
-  await getVideoOrFail(videoId);
 
-  const likeKey = `video:${videoId}:likes`;
-  const userKey = `user:${userId}:likedVideos`;
+  const result = await toggleLike({
+    entityType: 'video',
+    entityId: videoId,
+    userId,
+    model: Video,
+    redisLikeKey: `video:${videoId}:likes`,
+    redisUserKey: `user:${userId}:likedVideos`,
+    dirtySet: 'videos:dirty',
+  });
 
-  let hasLiked = false;
-
-  if (isRedisEnabled) {
-    const likedVideos = (await redisSMembers(userKey)) || [];
-    hasLiked = likedVideos.includes(videoId);
-  } else {
-    hasLiked = !!(await Like.findOne({ video: videoId, likedBy: userId }));
-  }
-
-  if (hasLiked) {
-    if (isRedisEnabled) {
-      await redisDecr(likeKey);
-      await redisSRem(userKey, videoId);
-    }
-    await Like.deleteOne({ video: videoId, likedBy: userId });
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, { liked: false }, 'Video unliked'));
-  } else {
-    if (isRedisEnabled) {
-      await redisIncr(likeKey);
-      await redisSAdd(userKey, videoId);
-    }
-    await Like.create({ video: videoId, likedBy: userId });
-
-    return res
-      .status(201)
-      .json(new ApiResponse(201, { liked: true }, 'Video liked'));
-  }
+  return res
+    .status(result.liked ? 201 : 200)
+    .json(
+      new ApiResponse(
+        result.liked ? 201 : 200,
+        { liked: result.liked },
+        result.message
+      )
+    );
 });
 
-/* ----------------------------- Toggle Comment Like ----------------------------- */
 const toggleCommentLike = asyncHandler(async (req, res) => {
   const { commentId } = req.params;
   const userId = req.user.id;
@@ -70,177 +104,200 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
   if (!isValidObjectId(commentId))
     throw new ApiError(400, 'Invalid comment ID');
 
-  const comment = await Comment.findById(commentId);
-  if (!comment) throw new ApiError(404, 'Comment not found');
+  const result = await toggleLike({
+    entityType: 'comment',
+    entityId: commentId,
+    userId,
+    model: Comment,
+    redisLikeKey: `comment:${commentId}:likes`,
+    redisUserKey: `user:${userId}:likedComments`,
+    dirtySet: 'comments:dirty',
+  });
 
-  const likeKey = `comment:${commentId}:likes`;
-  const userKey = `comment:${commentId}:user:${userId}`;
-
-  const hasLiked = isRedisEnabled ? await redisGet(userKey) : null;
-
-  if (hasLiked) {
-    if (isRedisEnabled) {
-      await redisDecr(likeKey);
-      await redisDel(userKey);
-    } else {
-      await Like.deleteOne({ comment: commentId, likedBy: userId });
-    }
-    return res
-      .status(200)
-      .json(new ApiResponse(200, { liked: false }, 'Comment unliked'));
-  } else {
-    if (isRedisEnabled) {
-      await redisIncr(likeKey);
-      await redisSet(userKey, '1');
-    } else {
-      await Like.create({ comment: commentId, likedBy: userId });
-    }
-    return res
-      .status(201)
-      .json(new ApiResponse(201, { liked: true }, 'Comment liked'));
-  }
+  return res
+    .status(result.liked ? 201 : 200)
+    .json(
+      new ApiResponse(
+        result.liked ? 201 : 200,
+        { liked: result.liked },
+        result.message
+      )
+    );
 });
 
-/* ----------------------------- Toggle Tweet Like ----------------------------- */
 const toggleTweetLike = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
   const userId = req.user.id;
 
   if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
 
-  const tweet = await Tweet.findById(tweetId);
-  if (!tweet) throw new ApiError(404, 'Tweet not found');
+  const result = await toggleLike({
+    entityType: 'tweet',
+    entityId: tweetId,
+    userId,
+    model: Tweet,
+    redisLikeKey: `tweet:${tweetId}:likes`,
+    redisUserKey: `user:${userId}:likedTweets`,
+    dirtySet: 'tweets:dirty',
+  });
 
-  const likeKey = `tweet:${tweetId}:likes`;
-  const userKey = `tweet:${tweetId}:user:${userId}`;
-
-  const hasLiked = isRedisEnabled ? await redisGet(userKey) : null;
-
-  if (hasLiked) {
-    if (isRedisEnabled) {
-      await redisDecr(likeKey);
-      await redisDel(userKey);
-    } else {
-      await Like.deleteOne({ tweet: tweetId, likedBy: userId });
-    }
-    return res
-      .status(200)
-      .json(new ApiResponse(200, { liked: false }, 'Tweet unliked'));
-  } else {
-    if (isRedisEnabled) {
-      await redisIncr(likeKey);
-      await redisSet(userKey, '1');
-    } else {
-      await Like.create({ tweet: tweetId, likedBy: userId });
-    }
-    return res
-      .status(201)
-      .json(new ApiResponse(201, { liked: true }, 'Tweet liked'));
-  }
+  return res
+    .status(result.liked ? 201 : 200)
+    .json(
+      new ApiResponse(
+        result.liked ? 201 : 200,
+        { liked: result.liked },
+        result.message
+      )
+    );
 });
 
-/* ----------------------------- Fetch Like Counts ----------------------------- */
+/* ----------------------------- Get Like Counts + User Status ----------------------------- */
+const getLikes = async ({ entityType, entityId, model, redisKey, userId }) => {
+  if (!isValidObjectId(entityId))
+    throw new ApiError(400, `Invalid ${entityType} ID`);
 
-// Fetch likes for a single video
+  let count = 0;
+  if (isRedisEnabled) {
+    count = parseInt((await redisGet(redisKey)) || '0');
+  }
+
+  let isLiked = false;
+  if (userId) {
+    if (isRedisEnabled) {
+      const userKey = `user:${userId}:liked${entityType.charAt(0).toUpperCase() + entityType.slice(1)}s`;
+      const likedSet = await redisSMembers(userKey);
+      isLiked = likedSet.includes(entityId);
+    }
+  }
+
+  if (!isRedisEnabled) {
+    count = await Like.countDocuments({ [entityType]: entityId });
+    if (userId)
+      isLiked = !!(await Like.findOne({
+        [entityType]: entityId,
+        likedBy: userId,
+      }));
+  }
+
+  return { count, isLiked };
+};
+
 const getVideoLikes = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   if (!isValidObjectId(videoId)) throw new ApiError(400, 'Invalid video ID');
 
-  let count = 0;
-  if (isRedisEnabled) {
-    count = parseInt((await redisGet(`video:${videoId}:likes`)) || '0');
-  } else {
-    count = await Like.countDocuments({ video: videoId });
-  }
+  const result = await getLikes({
+    entityType: 'video',
+    entityId: videoId,
+    model: Video,
+    redisKey: `video:${videoId}:likes`,
+    userId: req.user?.id,
+  });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { videoId, count }, 'Video like count fetched'));
+    .json(
+      new ApiResponse(200, { videoId, ...result }, 'Video like info fetched')
+    );
 });
 
-// Fetch likes for a single comment
 const getCommentLikes = asyncHandler(async (req, res) => {
   const { commentId } = req.params;
   if (!isValidObjectId(commentId))
     throw new ApiError(400, 'Invalid comment ID');
 
-  let count = 0;
-  if (isRedisEnabled) {
-    count = parseInt((await redisGet(`comment:${commentId}:likes`)) || '0');
-  } else {
-    count = await Like.countDocuments({ comment: commentId });
-  }
+  const result = await getLikes({
+    entityType: 'comment',
+    entityId: commentId,
+    model: Comment,
+    redisKey: `comment:${commentId}:likes`,
+    userId: req.user?.id,
+  });
 
   return res
     .status(200)
     .json(
-      new ApiResponse(200, { commentId, count }, 'Comment like count fetched')
+      new ApiResponse(
+        200,
+        { commentId, ...result },
+        'Comment like info fetched'
+      )
     );
 });
 
-// Fetch likes for a single tweet
 const getTweetLikes = asyncHandler(async (req, res) => {
   const { tweetId } = req.params;
   if (!isValidObjectId(tweetId)) throw new ApiError(400, 'Invalid tweet ID');
 
-  let count = 0;
-  if (isRedisEnabled) {
-    count = parseInt((await redisGet(`tweet:${tweetId}:likes`)) || '0');
-  } else {
-    count = await Like.countDocuments({ tweet: tweetId });
-  }
+  const result = await getLikes({
+    entityType: 'tweet',
+    entityId: tweetId,
+    model: Tweet,
+    redisKey: `tweet:${tweetId}:likes`,
+    userId: req.user?.id,
+  });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { tweetId, count }, 'Tweet like count fetched'));
+    .json(
+      new ApiResponse(200, { tweetId, ...result }, 'Tweet like info fetched')
+    );
 });
 
-/* ----------------------------- Liked Videos ----------------------------- */
+/* ----------------------------- Get Liked Videos (Redis-First) ----------------------------- */
 const getLikedVideos = asyncHandler(async (req, res) => {
   const userId = req.user.id;
+
+  const likedVideosKey = `user:${userId}:likedVideos`;
 
   let likedVideoIds = [];
 
   if (isRedisEnabled) {
-    const likedVideos =
-      (await redisSMembers(`user:${userId}:likedVideos`)) || [];
-    likedVideoIds = likedVideos.map((id) => id.toString());
+    const cachedIds = await redisSMembers(likedVideosKey);
+    if (Array.isArray(cachedIds) && cachedIds.length > 0) {
+      likedVideoIds = cachedIds;
+    }
   }
 
-  let likes;
-
-  if (likedVideoIds.length) {
-    likes = await Like.find({
-      likedBy: userId,
-      video: { $in: likedVideoIds },
-    }).populate({
-      path: 'video',
-      populate: { path: 'owner', select: 'username fullName avatar' },
-    });
-  } else {
-    likes = await Like.find({ video: { $ne: null }, likedBy: userId })
+  let likes = [];
+  if (likedVideoIds.length > 0) {
+    likes = await Like.find({ likedBy: userId, video: { $in: likedVideoIds } })
       .populate({
         path: 'video',
         populate: { path: 'owner', select: 'username fullName avatar' },
       })
       .lean();
+  } else {
+    likes = await Like.find({ likedBy: userId, video: { $ne: null } })
+      .populate({
+        path: 'video',
+        populate: { path: 'owner', select: 'username fullName avatar' },
+      })
+      .lean();
+
+    if (isRedisEnabled && likes.length > 0) {
+      const idsToCache = likes
+        .filter((like) => like.video) // filter nulls before caching
+        .map((like) => like.video._id.toString());
+      if (idsToCache.length > 0) await redisSAdd(likedVideosKey, ...idsToCache);
+    }
   }
 
-  const likedVideos = likes
-    .filter((like) => like.video && like.video.owner) // only keep valid ones
+  // Shape response safely
+  const likedVideos = likes // filter nulls before caching
+    .filter((like) => like.video && like.video.owner) // only valid ones
     .map((like) => ({
       video: like.video,
       channel: like.video.owner,
     }));
 
-  if (isRedisEnabled) {
-    // Cache the shaped data
-    await redisSet(`user:${userId}:likedVideos`, likedVideos, 300);
-  }
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, likedVideos, 'Liked videos retrieved'));
+  return res.status(200).json({
+    success: true,
+    statusCode: 200,
+    data: likedVideos,
+    message: 'Liked videos retrieved',
+  });
 });
 
 export {
