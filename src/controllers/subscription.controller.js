@@ -23,41 +23,48 @@ const toggleSubscription = asyncHandler(async (req, res) => {
   if (!isValidObjectId(channelId))
     throw new ApiError(400, 'Invalid channel ID');
 
-  // Fetch channel
+  // Ensure channel exists
   const channel = await User.findById(channelId).select('_id username');
   if (!channel) throw new ApiError(404, 'Channel not found');
 
-  // Check subscription
+  let isSubscribed = false;
+
+  // Check if subscription exists
   const subscription = await Subscription.findOne({
     subscriber: userId,
     channel: channelId,
   });
 
   if (subscription) {
+    // Unsubscribe
     await Subscription.deleteOne({ _id: subscription._id });
-
-    // Invalidate cache
-    if (isRedisEnabled) {
-      await redisDel(`user:${userId}:subscriptions`);
-      await redisDel(`channel:${channelId}:subscribers`);
-    }
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, null, 'Unsubscribed successfully'));
+    isSubscribed = false;
   } else {
+    // Subscribe
     await Subscription.create({ subscriber: userId, channel: channelId });
-
-    // Invalidate cache
-    if (isRedisEnabled) {
-      await redisDel(`user:${userId}:subscriptions`);
-      await redisDel(`channel:${channelId}:subscribers`);
-    }
-
-    return res
-      .status(201)
-      .json(new ApiResponse(201, null, 'Subscribed successfully'));
+    isSubscribed = true;
   }
+
+  // Always recalc subscribers count
+  const subscribersCount = await Subscription.countDocuments({
+    channel: channelId,
+  });
+
+  // Invalidate cache
+  if (isRedisEnabled) {
+    await redisDel(`user:${userId}:subscriptions`);
+    await redisDel(`channel:${channelId}:subscribers`);
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { isSubscribed, subscribersCount },
+        isSubscribed ? 'Subscribed successfully' : 'Unsubscribed successfully'
+      )
+    );
 });
 
 // -------------------- Get all subscribers of a channel --------------------
@@ -131,4 +138,22 @@ const getSubscribedChannels = asyncHandler(async (req, res) => {
     );
 });
 
-export { toggleSubscription, getUserChannelSubscribers, getSubscribedChannels };
+const getChannelSubscriberCount = asyncHandler(async (req, res) => {
+  const { channelId } = req.params;
+
+  if (!isValidObjectId(channelId))
+    throw new ApiError(400, 'Invalid channel ID');
+
+  const count = await Subscription.countDocuments({ channel: channelId });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { count }, 'Subscriber count fetched'));
+});
+
+export {
+  toggleSubscription,
+  getUserChannelSubscribers,
+  getSubscribedChannels,
+  getChannelSubscriberCount,
+};

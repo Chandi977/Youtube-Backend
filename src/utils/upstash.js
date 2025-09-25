@@ -96,6 +96,11 @@ export async function redisDel(key) {
   return callRedis('del', [formatKey(key)]);
 }
 
+// Set TTL on a key
+export async function redisExpire(key, ttlInSeconds) {
+  return callRedis('expire', [formatKey(key), ttlInSeconds]);
+}
+
 // Ping Redis
 export async function redisPing() {
   if (!isRedisEnabled) return false;

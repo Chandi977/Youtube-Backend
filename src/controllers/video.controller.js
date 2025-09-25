@@ -16,11 +16,13 @@ import {
   redisSMembers,
   redisDel,
   isRedisEnabled,
+  redisExpire,
   redisSRem,
 } from '../utils/upstash.js';
 import { processVideoPipeline } from '../utils/videoProcessor.js';
 import { videoQueue } from '../queues/videoQueue.js';
-// ====================== Helpers ======================
+import { View } from '../models/view.model.js';
+import { User } from '../models/user.model.js';
 
 // Get video by ID or throw 404
 const getVideoOrFail = async (videoId) => {
@@ -132,18 +134,17 @@ const publishAVideo = asyncHandler(async (req, res) => {
       title: title.trim(),
       description: description.trim(),
       owner: req.user._id,
-      status: 'processing', // Initial status
+      status: 'processing',
       thumbnail: {
         url: uploadedThumb.secure_url,
         public_id: uploadedThumb.public_id,
       },
-      // videoFile details will be filled in by the worker
     });
 
     // --- STEP 3: Add video processing job to the queue ---
     const job = await videoQueue.add('video-processing', {
       videoLocalPath: videoFile.path,
-      thumbnailLocalPath: thumbnail.path, // Keep for potential reprocessing
+      thumbnailLocalPath: thumbnail.path,
       userId: req.user._id.toString(),
       videoData: {
         videoId: videoRecord._id,
@@ -151,22 +152,25 @@ const publishAVideo = asyncHandler(async (req, res) => {
       },
     });
 
-    // --- STEP 4: Respond to the client immediately ---
+    // --- STEP 4: Respond to the client ---
     res.status(202).json(
       new ApiResponse(
         202,
         {
           jobId: job.id,
-          video: videoRecord, // Send initial video data
+          video: videoRecord,
         },
         'Video is being processed. You will be notified upon completion.'
       )
     );
   } catch (err) {
-    // --- CLEANUP ---
     if (uploadedThumb?.public_id)
       await deleteFromCloudinary(uploadedThumb.public_id, 'image');
     throw err;
+  } finally {
+    // --- STEP 5: Cleanup temporary files ---
+    if (videoFile?.path) await fs.unlink(videoFile.path).catch(() => {});
+    if (thumbnail?.path) await fs.unlink(thumbnail.path).catch(() => {});
   }
 });
 
@@ -291,12 +295,30 @@ const recordView = asyncHandler(async (req, res) => {
 
   if (isRedisEnabled) {
     const userViewedKey = `video:${videoId}:viewed`;
+
+    // Add user to set
     const added = await redisSAdd(userViewedKey, userId);
+
     if (added) {
+      // Increment views
       await redisIncr(`video:${videoId}:views`);
+
+      // Mark video as dirty for eventual DB sync
       await redisSAdd('videos:dirty', videoId);
+
+      // Set 24-hour expiry for this set if not already set
+      // (so user can count as new viewer after 24h)
+      await redisExpire(userViewedKey, 24 * 60 * 60); // seconds
     }
+
+    // Always update or create the View document for watch history
+    await View.findOneAndUpdate(
+      { video: videoId, user: userId },
+      { $inc: { watchTime: 1 } }, // Example: increment watch time
+      { upsert: true, new: true }
+    );
   } else {
+    // fallback to MongoDB (not recommended for high traffic)
     await Video.findByIdAndUpdate(videoId, { $inc: { viewsCount: 1 } });
   }
 

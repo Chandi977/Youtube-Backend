@@ -34,16 +34,6 @@ import { redisGet, redisSet, isRedisEnabled } from '../utils/upstash.js';
 
 // ====================== Helpers ======================
 
-// Add views count to videos
-const addViewsCount = async (videos) => {
-  return await Promise.all(
-    videos.map(async (video) => {
-      const views = await View.countDocuments({ video: video._id });
-      return { ...video.toObject(), views };
-    })
-  );
-};
-
 // ====================== Controllers ======================
 
 // Get feed for current user
@@ -68,13 +58,11 @@ const getFeed = asyncHandler(async (req, res) => {
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  const videosWithViews = await addViewsCount(videos);
-
-  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 300);
+  if (isRedisEnabled) await redisSet(cacheKey, videos, 300);
 
   res
     .status(200)
-    .json(new ApiResponse(200, videosWithViews, 'Feed fetched successfully'));
+    .json(new ApiResponse(200, videos, 'Feed fetched successfully'));
 });
 
 // Get recommended videos
@@ -95,18 +83,12 @@ const recommendedVideos = asyncHandler(async (req, res) => {
     .populate('owner', 'username avatar')
     .sort({ createdAt: -1 });
 
-  const videosWithViews = await addViewsCount(videos);
-
-  if (isRedisEnabled) await redisSet(cacheKey, videosWithViews, 300);
+  if (isRedisEnabled) await redisSet(cacheKey, videos, 300);
 
   res
     .status(200)
     .json(
-      new ApiResponse(
-        200,
-        videosWithViews,
-        'Recommended videos fetched successfully'
-      )
+      new ApiResponse(200, videos, 'Recommended videos fetched successfully')
     );
 });
 
