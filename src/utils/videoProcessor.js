@@ -12,8 +12,6 @@ import logger from './logger.js';
 ffmpeg.setFfmpegPath(ffmpegStatic);
 ffmpeg.setFfprobePath(ffprobeStatic.path);
 
-const MAX_RETRIES = 2;
-
 const formatTime = (seconds) => {
   if (!isFinite(seconds) || seconds < 0) return '00:00:00';
   const h = Math.floor(seconds / 3600)
@@ -29,7 +27,7 @@ const formatTime = (seconds) => {
 };
 
 /**
- * Compress input -> compressedFile
+ * Compress video
  */
 const compressVideo = (inputPath, io = null, userId = null) => {
   logger.info(`[Compression] Start: ${inputPath}`);
@@ -68,7 +66,7 @@ const compressVideo = (inputPath, io = null, userId = null) => {
         }
       })
       .on('end', () => {
-        process.stdout.write('\n'); // finish progress line
+        process.stdout.write('\n');
         logger.info(`[Compression] Done: ${out}`);
         resolve(out);
       })
@@ -82,7 +80,7 @@ const compressVideo = (inputPath, io = null, userId = null) => {
 };
 
 /**
- * Process single resolution into HLS
+ * Process single resolution to HLS
  */
 const processResolution = (
   inputPath,
@@ -102,9 +100,8 @@ const processResolution = (
     let segmentCount = 0;
 
     const watcher = fs.watch(resFolder, (eventType, filename) => {
-      if (eventType === 'rename' && filename && filename.endsWith('.ts')) {
+      if (eventType === 'rename' && filename && filename.endsWith('.ts'))
         segmentCount++;
-      }
     });
 
     const scaleFilter = `scale=-2:${res.height}:force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2`;
@@ -131,9 +128,7 @@ const processResolution = (
         const elapsed = (Date.now() - start) / 1000;
         const eta = percent > 0 ? elapsed / (percent / 100) - elapsed : -1;
 
-        const msg = `[HLS ${res.label}] ${percent.toFixed(
-          1
-        )}% Segments=${segmentCount} ETA=${formatTime(eta)}`;
+        const msg = `[HLS ${res.label}] ${percent.toFixed(1)}% Segments=${segmentCount} ETA=${formatTime(eta)}`;
         process.stdout.write(msg + '\r');
 
         if (io && userId) {
@@ -163,7 +158,7 @@ const processResolution = (
 };
 
 /**
- * Upload HLS to Cloudinary
+ * Upload HLS folder to Cloudinary
  */
 const uploadHLSFolderToCloudinary = async (
   folderPath,
@@ -195,12 +190,11 @@ const uploadHLSFolderToCloudinary = async (
     (u) => u.filename === `${resolutionLabel}.m3u8`
   );
   const playlistUrl = playlistEntry ? playlistEntry.secure_url : null;
-
   return { playlistUrl, uploadedFiles: uploaded };
 };
 
 /**
- * Master playlist builder
+ * Build master playlist
  */
 const buildMasterPlaylistContent = (variants) => {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
@@ -215,7 +209,7 @@ const buildMasterPlaylistContent = (variants) => {
 };
 
 /**
- * Main pipeline
+ * Main video processing pipeline
  */
 export const processVideoPipeline = async (
   inputPath,
@@ -226,10 +220,8 @@ export const processVideoPipeline = async (
   const tempBase = path.join('public', 'temp', 'hls', videoId);
   fs.mkdirSync(tempBase, { recursive: true });
 
-  // 1. Check if the input file exists before starting the pipeline
-  if (!fs.existsSync(inputPath)) {
+  if (!fs.existsSync(inputPath))
     throw new ApiError(400, 'Input file not found: ' + inputPath);
-  }
 
   const resolutions = [
     {
@@ -292,23 +284,20 @@ export const processVideoPipeline = async (
 
   const { duration, height: videoHeight } = await new Promise((res, rej) => {
     ffmpeg.ffprobe(compressed, (err, metadata) => {
-      if (err) {
-        return rej(new ApiError(500, 'Failed to read video metadata.'));
-      }
+      if (err) return rej(new ApiError(500, 'Failed to read video metadata.'));
       const videoStream = metadata.streams.find(
         (s) => s.codec_type === 'video'
       );
       const duration = metadata.format.duration || 0;
       const height = videoStream ? videoStream.height : 0;
-      if (height === 0) {
+      if (height === 0)
         logger.warn('[Pipeline] Could not determine video height.');
-      }
       return res({ duration, height });
     });
   });
+
   logger.info(`[Pipeline] Duration: ${duration}s, Height: ${videoHeight}px`);
 
-  // For debugging on resource-constrained machines, you can set this to 1
   const CONCURRENCY_LIMIT = 3;
   const tasks = resolutions.map((res) => async () => {
     try {
@@ -318,7 +307,6 @@ export const processVideoPipeline = async (
         );
         return null;
       }
-      logger.info(`[Pipeline] Starting ${res.label}`);
       const { folder } = await processResolution(
         compressed,
         tempBase,
@@ -340,14 +328,14 @@ export const processVideoPipeline = async (
         label: res.label,
         width: res.width,
         height: res.height,
-        bitrate: parseInt(res.bitrate, 10), // Store as number for DB
+        bitrate: parseInt(res.bitrate, 10),
         playlistUrl: uploadResult.playlistUrl,
       };
     } catch (error) {
       logger.error(`[Pipeline] Task for ${res.label} failed`, {
         message: error.message,
       });
-      return null; // Return null to indicate failure for this resolution
+      return null;
     }
   });
 
@@ -359,9 +347,7 @@ export const processVideoPipeline = async (
       executing.splice(executing.indexOf(promise), 1);
     });
     executing.push(promise);
-    if (executing.length >= CONCURRENCY_LIMIT) {
-      await Promise.race(executing);
-    }
+    if (executing.length >= CONCURRENCY_LIMIT) await Promise.race(executing);
   }
   await Promise.all(executing);
 
@@ -379,6 +365,17 @@ export const processVideoPipeline = async (
     null,
     `hls/${videoId}/master`
   );
+
+  // Experimental: send final response to frontend via socket
+  if (io && userId) {
+    io.to(userId.toString()).emit('video_processed', {
+      videoId,
+      masterPlaylist: masterUpload.secure_url,
+      variants: usableVariants,
+      duration,
+      experimental: true,
+    });
+  }
 
   try {
     if (fs.existsSync(tempBase))
