@@ -1,25 +1,36 @@
 import Redis from 'ioredis';
 import logger from '../utils/logger.js';
 
-const redisURL = process.env.UPSTASH_REDIS_URL || 'redis://localhost:6379';
+const redisURL = process.env.UPSTASH_REDIS_URL;
 
-const connectionOptions = {
-  // Enable TLS for production (Upstash requires it)
-  tls: redisURL.startsWith('rediss://')
-    ? { rejectUnauthorized: false }
-    : undefined,
-  maxRetriesPerRequest: null, // Let BullMQ handle retries
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-  lazyConnect: true,
-};
+if (!redisURL) {
+  logger.warn(
+    '❌ UPSTASH_REDIS_URL not found. Redis operations will be disabled.'
+  );
+}
 
 // ioredis automatically parses the password from the URL
-export const redisConnection = new Redis(redisURL, connectionOptions);
+export const redisConnection = redisURL
+  ? new Redis(redisURL, {
+      // Enable TLS for Upstash
+      tls: {
+        rejectUnauthorized: false,
+      },
+      maxRetriesPerRequest: null, // Important for BullMQ
+      enableOfflineQueue: true, // Queue commands when connection is lost
+    })
+  : null;
 
-redisConnection.on('error', (err) => {
-  logger.error('❌ Redis connection error for BullMQ:', err.message);
-});
+if (redisConnection) {
+  redisConnection.on('connect', () =>
+    logger.info('✅ Redis connected successfully.')
+  );
+  redisConnection.on('error', (err) =>
+    logger.error('❌ Redis connection error:', err.message)
+  );
+  redisConnection.on('close', () =>
+    logger.warn('⚠️ Redis connection closed. Attempting to reconnect...')
+  );
+}
 
-redisConnection.on('connect', () => {
-  logger.info('✅ Redis connected successfully for BullMQ');
-});
+export const isRedisEnabled = !!redisConnection;

@@ -16,6 +16,7 @@ import {
   redisDel,
   redisSRem,
   isRedisEnabled,
+  redisPipeline,
 } from '../utils/upstash.js';
 
 /* ----------------------------- Helper: Toggle Like ----------------------------- */
@@ -29,11 +30,11 @@ const toggleLike = async ({
   dirtySet,
 }) => {
   let hasLiked = false;
-
+  // The DB check is crucial for existence, let's keep it.
+  if (!(await model.findById(entityId))) {
+    throw new ApiError(404, `${entityType} not found`);
+  }
   if (isRedisEnabled) {
-    // Check if entity exists
-    if (!(await model.findById(entityId)))
-      throw new ApiError(404, `${entityType} not found`);
     const likedSet = await redisSMembers(redisUserKey);
     hasLiked = likedSet.includes(entityId);
   } else {
@@ -42,24 +43,26 @@ const toggleLike = async ({
       likedBy: userId,
     }));
   }
-  if (!hasLiked && !(await model.findById(entityId)))
-    throw new ApiError(404, `${entityType} not found`);
 
   if (hasLiked) {
     if (isRedisEnabled) {
-      await redisDecr(redisLikeKey);
-      await redisSRem(redisUserKey, entityId);
-      if (dirtySet) await redisSAdd(dirtySet, entityId);
+      const pipeline = redisPipeline();
+      pipeline.decr(redisLikeKey);
+      pipeline.srem(redisUserKey, entityId);
+      if (dirtySet) pipeline.sadd(dirtySet, entityId);
+      await pipeline.exec();
     }
     await Like.deleteOne({ [entityType]: entityId, likedBy: userId });
     return { liked: false, message: `${entityType} unliked` };
   } else {
     if (isRedisEnabled) {
-      await redisIncr(redisLikeKey);
-      await redisSAdd(redisUserKey, entityId);
-      if (dirtySet) await redisSAdd(dirtySet, entityId);
+      const pipeline = redisPipeline();
+      pipeline.incr(redisLikeKey);
+      pipeline.sadd(redisUserKey, entityId);
+      if (dirtySet) pipeline.sadd(dirtySet, entityId);
+      await pipeline.exec();
     }
-    // Use upsert to prevent duplicates
+    // Use findOneAndUpdate with upsert to prevent race conditions
     await Like.findOneAndUpdate(
       { [entityType]: entityId, likedBy: userId },
       { [entityType]: entityId, likedBy: userId },
