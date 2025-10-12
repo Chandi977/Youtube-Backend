@@ -197,6 +197,7 @@ const getVideoById = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: videoData });
 });
 
+
 // GET VIDEOS BY USER
 const getVideosByUser = asyncHandler(async (req, res) => {
   const { userId } = req.params;
@@ -207,7 +208,7 @@ const getVideosByUser = asyncHandler(async (req, res) => {
   if (cached) return res.status(200).json({ success: true, data: cached });
 
   const videos = await Video.find({ owner: userId })
-    .select('_id title thumbnail likesCount viewsCount createdAt')
+    .select('_id title thumbnail likesCount viewsCount createdAt') // <-- owner not included
     .sort({ createdAt: -1 })
     .lean();
 

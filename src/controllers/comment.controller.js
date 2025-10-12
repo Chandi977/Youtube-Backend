@@ -230,10 +230,133 @@ const deleteComment = asyncHandler(async (req, res) => {
     );
 });
 
+// ADD NEW COMMENT / REPLY ON TWEET
+const addTweetComment = asyncHandler(async (req, res) => {
+  const { content, parentId } = req.body;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const owner = req.user._id;
+  const { tweetId } = req.params;
+
+  if (!content?.trim()) throw new ApiError(400, 'Comment cannot be empty');
+  if (!mongoose.isValidObjectId(tweetId))
+    throw new ApiError(400, 'Invalid tweet ID');
+  if (parentId && !mongoose.isValidObjectId(parentId))
+    throw new ApiError(400, 'Invalid parent comment ID');
+
+  if (parentId) {
+    const parentComment = await Comment.findById(parentId);
+    if (!parentComment) throw new ApiError(404, 'Parent comment not found');
+  }
+
+  await Comment.create({
+    content: content.trim(),
+    tweet: tweetId,
+    owner,
+    parent: parentId || null,
+  });
+
+  if (isRedisEnabled) await redisIncr(`tweet:${tweetId}:comments:version`);
+
+  const updatedComments = await getNestedCommentsForTweet(tweetId, page, limit);
+
+  // Always return ONE response
+  return res
+    .status(201)
+    .json(
+      new ApiResponse(
+        201,
+        updatedComments,
+        parentId ? 'Reply added successfully.' : 'Comment added successfully.'
+      )
+    );
+});
+
+const { fetchNestedTweetComments, getTweetComments } = (function () {
+  // Internal helper function (no asyncHandler)
+  const fetchNestedTweetComments = async (tweetId, page = 1, limit = 10) => {
+    if (!mongoose.isValidObjectId(tweetId))
+      throw new ApiError(400, 'Invalid tweet ID');
+
+    // 1️⃣ Fetch top-level comments
+    const topLevelComments = await Comment.find({
+      tweet: tweetId,
+      parent: null,
+    })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('owner', 'username avatar')
+      .lean();
+
+    if (topLevelComments.length === 0) return [];
+
+    // 2️⃣ Fetch all replies for the tweet
+    const allReplies = await Comment.find({
+      tweet: tweetId,
+      parent: { $ne: null },
+    })
+      .sort({ createdAt: 1 })
+      .populate('owner', 'username avatar')
+      .lean();
+
+    // 3️⃣ Map parentId → [children]
+    const repliesMap = new Map();
+    allReplies.forEach((reply) => {
+      const parentId = reply.parent.toString();
+      if (!repliesMap.has(parentId)) repliesMap.set(parentId, []);
+      repliesMap.get(parentId).push(reply);
+    });
+
+    // 4️⃣ Build nested tree recursively
+    const buildTree = (comment) => {
+      const children = repliesMap.get(comment._id.toString()) || [];
+      comment.replies = children.map(buildTree);
+      return comment;
+    };
+
+    return topLevelComments.map(buildTree);
+  };
+
+  // Controller function (with asyncHandler)
+  const getTweetComments = asyncHandler(async (req, res) => {
+    const { tweetId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    let cacheKey;
+    if (isRedisEnabled) {
+      const version =
+        (await redisGet(`tweet:${tweetId}:comments:version`)) || 1;
+      cacheKey = `tweet:${tweetId}:comments:v${version}:page:${page}:limit:${limit}`;
+      const cached = await redisGet(cacheKey);
+      if (cached) {
+        return res
+          .status(200)
+          .json(new ApiResponse(200, cached, 'Comments fetched from cache'));
+      }
+    }
+
+    const comments = await fetchNestedTweetComments(tweetId, page, limit);
+
+    if (isRedisEnabled && cacheKey) {
+      await redisSet(cacheKey, comments, 3600); // cache for 1 hour
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, comments, 'Comments fetched successfully'));
+  });
+
+  return { fetchNestedTweetComments, getTweetComments };
+})();
+
 export {
   getVideoComments,
   addComment,
   updateComment,
   deleteComment,
   getNestedCommentsForVideo,
+  addTweetComment,
+  getTweetComments,
 };

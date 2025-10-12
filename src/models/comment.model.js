@@ -10,7 +10,10 @@ const commentSchema = new Schema(
     video: {
       type: Schema.Types.ObjectId,
       ref: 'Video',
-      required: true,
+    },
+    tweet: {
+      type: Schema.Types.ObjectId,
+      ref: 'Tweet',
     },
     owner: {
       type: Schema.Types.ObjectId,
@@ -30,6 +33,18 @@ const commentSchema = new Schema(
   }
 );
 
+// Custom validator to ensure a comment belongs to either a video or a tweet
+commentSchema.pre('validate', function (next) {
+  if (!this.video && !this.tweet) {
+    next(new Error('Comment must be associated with a video or a tweet.'));
+  } else if (this.video && this.tweet) {
+    next(
+      new Error('Comment cannot be associated with both a video and a tweet.')
+    );
+  } else {
+    next();
+  }
+});
 // Virtual field for replies
 commentSchema.virtual('replies', {
   ref: 'Comment',

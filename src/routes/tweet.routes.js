@@ -4,25 +4,36 @@ import {
   deleteTweet,
   getUserTweets,
   updateTweet,
+  toggleLikeTweet,
+  toggleShareTweet,
+  getTweetReplies,
 } from '../controllers/tweet.controller.js';
+import {
+  addTweetComment,
+  updateComment,
+  deleteComment,
+  getTweetComments,
+} from '../controllers/comment.controller.js';
 import { verifyJWT } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/multer.middleware.js';
-
 const router = Router();
 
-// Apply JWT middleware to all routes
+// Apply JWT to protected routes
 router.use(verifyJWT);
 
-// Create a tweet (text, image, or both)
+// Tweet CRUD
 router.post('/', upload.single('image'), createTweet);
-
-// Get all tweets of a user (no image upload needed)
 router.get('/user/:userId', getUserTweets);
-
-// Update a tweet (content and/or image)
+router.get('/:tweetId/replies', getTweetReplies);
 router.patch('/:tweetId', upload.single('image'), updateTweet);
-
-// Delete a tweet
 router.delete('/:tweetId', deleteTweet);
+router.post('/:tweetId/like', toggleLikeTweet);
+router.post('/:tweetId/share', toggleShareTweet);
+
+// Tweet Comments
+router.get('/:tweetId/comments', getTweetComments);
+router.post('/:tweetId/comments', addTweetComment);
+router.patch('/comments/:commentId', updateComment);
+router.delete('/comments/:commentId', deleteComment);
 
 export default router;
