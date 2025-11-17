@@ -2,7 +2,7 @@
 
 Model of the Backend with JavaScript
 
-- [Model Link]([https://app.eraser.io/workspace/YtPqZ1VogxGy1jzIDkzj](https://app.eraser.io/workspace/EhlM279ofe73TknczTqj))
+- [Model Link](https://app.eraser.io/workspace/EhlM279ofe73TknczTqj)
 
 ## Overview
 
