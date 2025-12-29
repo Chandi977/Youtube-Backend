@@ -25,18 +25,23 @@ import { upload } from '../middlewares/multer.middleware.js';
 
 const router = Router();
 
-// Apply authentication middleware to all routes
+// -------------------- PUBLIC ROUTES --------------------
+// Allow guests to browse and view streams/comments
+router.route('/').get(getLiveStreams);
+router.route('/:streamId').get(getLiveStream);
+router.route('/:streamId/comments').get(getLiveComments);
+router.route('/:streamId/comments/featured').get(getFeaturedComments);
+
+// -------------------- AUTHENTICATED ROUTES --------------------
 router.use(verifyJWT);
 
-// Live Stream Routes
+// Live Stream creation & management
 router
   .route('/')
-  .get(getLiveStreams) // Get all live streams with filters
-  .post(upload.fields([{ name: 'thumbnail', maxCount: 1 }]), createLiveStream); // Create new stream
+  .post(upload.fields([{ name: 'thumbnail', maxCount: 1 }]), createLiveStream);
 
 router
   .route('/:streamId')
-  .get(getLiveStream) // Get single stream details
   .patch(updateStreamSettings) // Update stream settings
   .delete(deleteLiveStream); // Delete stream
 
@@ -47,14 +52,8 @@ router.route('/:streamId/join').post(joinLiveStream); // Join as viewer
 router.route('/:streamId/leave').post(leaveLiveStream); // Leave as viewer
 router.route('/:streamId/analytics').get(getStreamAnalytics); // Get analytics (owner only)
 
-// Comment Routes
-router
-  .route('/:streamId/comments')
-  .get(getLiveComments) // Get stream comments
-  .post(addLiveComment); // Add new comment
-
-router.route('/:streamId/comments/featured').get(getFeaturedComments); // Get featured comments
-
+// Comment Routes (write operations)
+router.route('/:streamId/comments').post(addLiveComment); // Add new comment
 router.route('/comments/:commentId/like').post(toggleLiveCommentLike); // Like/unlike comment
 router.route('/comments/:commentId/reply').post(replyToLiveComment); // Reply to comment
 router.route('/comments/:commentId/pin').patch(toggleCommentPin); // Pin/unpin comment

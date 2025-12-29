@@ -6,6 +6,10 @@ import { ApiError } from '../utils/ApiError.js';
 export const getJobStatus = asyncHandler(async (req, res) => {
   const { jobId } = req.params;
 
+  if (!videoQueue) {
+    throw new ApiError(503, 'Job queue unavailable (Redis disabled)');
+  }
+
   const job = await videoQueue.getJob(jobId);
 
   if (!job) {

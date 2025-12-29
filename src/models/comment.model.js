@@ -25,6 +25,10 @@ const commentSchema = new Schema(
       ref: 'Comment',
       default: null, // null means top-level comment
     },
+    likesCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

@@ -27,6 +27,27 @@ const app = express();
 // Trust the first proxy in front of the app, which is Render's load balancer.
 app.set('trust proxy', 1);
 
+// Configure CORS
+// CORS configuration
+const corsOptions = {
+  origin:
+    process.env.NODE_ENV === 'production'
+      ? process.env.CORS_ORIGIN?.split(',')
+      : ['http://localhost:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['Set-Cookie'],
+};
+
+app.use(cors(corsOptions));
+
+// Enable pre-flight for all routes
+app.options('*', cors(corsOptions));
+
+// Cookie parser middleware
+app.use(cookieParser());
+
 // Create HTTP server for Socket.IO
 const server = createServer(app);
 
@@ -36,6 +57,12 @@ app.use((req, res, next) => {
   next();
 });
 app.use(passport.initialize());
+
+// Import routes
+// import oauthRoutes from './routes/oAuth.routes.js';
+
+// Mount OAuth routes
+// app.use('/api/v1/auth', oauthRoutes);
 
 // ------------------------
 // Security middlewares
@@ -173,8 +200,13 @@ app.use(errorHandler);
 // ------------------------
 // Workers
 // ------------------------
-// Start video worker
-const videoWorker = createVideoWorker(io);
+// Start video worker only when Redis is available
+let videoWorker = null;
+if (isRedisEnabled) {
+  videoWorker = createVideoWorker(io);
+} else {
+  logger.warn('Redis disabled; video processing worker not started.');
+}
 
 const SYNC_LIKES_INTERVAL = Number(process.env.SYNC_LIKES_INTERVAL_MS) || 30000;
 if (isRedisEnabled) {
@@ -190,7 +222,7 @@ if (isRedisEnabled) {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully...');
-  await videoWorker.close();
+  if (videoWorker) await videoWorker.close();
   process.exit(0);
 });
 

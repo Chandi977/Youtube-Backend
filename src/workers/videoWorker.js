@@ -5,6 +5,11 @@ import { Video } from '../models/video.model.js';
 import logger from '../utils/logger.js';
 
 export const createVideoWorker = (io) => {
+  if (!redisConnection) {
+    logger.warn('[Worker] Redis disabled; video worker not started.');
+    return null;
+  }
+
   const worker = new Worker(
     'video-processing',
     async (job) => {

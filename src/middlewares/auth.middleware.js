@@ -25,3 +25,25 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, err?.message || 'Invalid Access Token');
   }
 });
+
+// Optional auth: attach req.user if token present, but never throw
+export const attachUserIfPresent = async (req, res, next) => {
+  const token =
+    req.cookies?.accessToken ||
+    req.header('Authorization')?.replace('Bearer ', '');
+
+  if (!token) return next();
+
+  try {
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    const userId = decoded.id || decoded._id;
+    if (!userId) return next();
+
+    const user = await User.findById(userId).select('-password -refreshToken');
+    if (user) req.user = user;
+  } catch (err) {
+    // swallow errors to keep route public
+  }
+
+  return next();
+};

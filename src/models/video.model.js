@@ -47,6 +47,10 @@ const videoSchema = new Schema(
       type: Number,
       default: 0,
     }, // Duration in seconds
+    likesCount: {
+      type: Number,
+      default: 0,
+    },
     viewsCount: {
       type: Number,
       default: 0,

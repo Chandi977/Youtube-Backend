@@ -75,31 +75,16 @@ userSchema.methods.isPasswordCorrect = async function (password) {
 
 // Method to generate a JWT access token
 userSchema.methods.generateAccessToken = function () {
-  return jwt.sign(
-    {
-      _id: this._id, // Include user ID in the token payload
-      email: this.email, // Include email in the token payload
-      username: this.username, // Include username in the token payload
-      fullname: this.fullName, // Include fullName in the token payload
-    },
-    process.env.ACCESS_TOKEN_SECRET, // Secret key from environment variables
-    {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRY, // Token expiration time from environment variables
-    }
-  );
+  return jwt.sign({ _id: this._id }, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: '1d',
+  });
 };
 
 // Method to generate a JWT refresh token
 userSchema.methods.generateRefreshToken = function () {
-  return jwt.sign(
-    {
-      _id: this._id, // Include user ID in the token payload
-    },
-    process.env.REFRESH_TOKEN_SECRET, // Secret key from environment variables
-    {
-      expiresIn: process.env.REFRESH_TOKEN_EXPIRY, // Token expiration time from environment variables
-    }
-  );
+  return jwt.sign({ _id: this._id }, process.env.REFRESH_TOKEN_SECRET, {
+    expiresIn: '7d',
+  });
 };
 
 // Exporting the User model based on the userSchema

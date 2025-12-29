@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Comment } from '../models/comment.model.js';
+import { Like } from '../models/like.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -61,6 +62,47 @@ const getNestedCommentsForVideo = async (videoId, page = 1, limit = 10) => {
   return topLevelComments.map(buildTree);
 };
 
+// Fetch nested tweet comments (shared by tweet comment flows)
+const getNestedCommentsForTweet = async (tweetId, page = 1, limit = 10) => {
+  if (!mongoose.isValidObjectId(tweetId))
+    throw new ApiError(400, 'Invalid tweet ID');
+
+  const topLevelComments = await Comment.find({
+    tweet: tweetId,
+    parent: null,
+  })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .populate('owner', 'username avatar')
+    .lean();
+
+  if (topLevelComments.length === 0) return [];
+
+  const allReplies = await Comment.find({
+    tweet: tweetId,
+    parent: { $ne: null },
+  })
+    .sort({ createdAt: 1 })
+    .populate('owner', 'username avatar')
+    .lean();
+
+  const repliesMap = new Map();
+  allReplies.forEach((reply) => {
+    const parentId = reply.parent.toString();
+    if (!repliesMap.has(parentId)) repliesMap.set(parentId, []);
+    repliesMap.get(parentId).push(reply);
+  });
+
+  const buildTree = (comment) => {
+    const children = repliesMap.get(comment._id.toString()) || [];
+    comment.replies = children.map(buildTree);
+    return comment;
+  };
+
+  return topLevelComments.map(buildTree);
+};
+
 // ====================== Controllers ======================
 
 // GET COMMENTS FOR A VIDEO (top-level + nested replies) with aggregation
@@ -76,26 +118,56 @@ const getVideoComments = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Invalid video ID');
   }
 
-  if (isRedisEnabled) {
-    const commentsVersion =
-      (await redisGet(`video:${videoId}:comments:version`)) || 1;
-    const cacheKey = `video:${videoId}:comments:v${commentsVersion}:page:${page}:limit:${limit}`;
+  const userId = req.user?._id?.toString();
+  let nestedComments;
+
+  const commentsVersion =
+    (isRedisEnabled &&
+      ((await redisGet(`video:${videoId}:comments:version`)) || 1)) ||
+    1;
+  const cacheKey = isRedisEnabled
+    ? `video:${videoId}:comments:v${commentsVersion}:page:${page}:limit:${limit}`
+    : null;
+
+  if (isRedisEnabled && cacheKey) {
     const cached = await redisGet(cacheKey);
     if (cached) {
-      return res
-        .status(200)
-        .json(new ApiResponse(200, cached, 'Comments fetched from cache'));
+      nestedComments = cached;
     }
   }
 
-  const nestedComments = await getNestedCommentsForVideo(videoId, page, limit);
+  if (!nestedComments) {
+    nestedComments = await getNestedCommentsForVideo(videoId, page, limit);
+    if (isRedisEnabled && cacheKey) {
+      await redisSet(cacheKey, nestedComments, 3600); // cache 1 hour
+    }
+  }
 
-  // --- Cache the result ---
-  if (isRedisEnabled) {
-    const commentsVersion =
-      (await redisGet(`video:${videoId}:comments:version`)) || 1;
-    const cacheKey = `video:${videoId}:comments:v${commentsVersion}:page:${page}:limit:${limit}`;
-    await redisSet(cacheKey, nestedComments, 3600); // cache 1 hour
+  // If user is logged in, mark isLiked based on Like records
+  if (userId) {
+    const allCommentIds = [];
+    const collectIds = (comment) => {
+      allCommentIds.push(comment._id.toString());
+      if (Array.isArray(comment.replies)) {
+        comment.replies.forEach(collectIds);
+      }
+    };
+    nestedComments.forEach(collectIds);
+
+    const liked = await Like.find({
+      likedBy: userId,
+      comment: { $in: allCommentIds },
+    }).select('comment');
+
+    const likedSet = new Set(liked.map((l) => l.comment.toString()));
+
+    const markLiked = (comment) => {
+      comment.isLiked = likedSet.has(comment._id.toString());
+      if (Array.isArray(comment.replies)) {
+        comment.replies.forEach(markLiked);
+      }
+    };
+    nestedComments.forEach(markLiked);
   }
 
   res
@@ -357,6 +429,7 @@ export {
   updateComment,
   deleteComment,
   getNestedCommentsForVideo,
+  getNestedCommentsForTweet,
   addTweetComment,
   getTweetComments,
 };

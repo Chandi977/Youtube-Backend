@@ -53,6 +53,8 @@ const toggleLike = async ({
       await pipeline.exec();
     }
     await Like.deleteOne({ [entityType]: entityId, likedBy: userId });
+    // Persist likesCount on the source entity
+    await model.findByIdAndUpdate(entityId, { $inc: { likesCount: -1 } });
     return { liked: false, message: `${entityType} unliked` };
   } else {
     if (isRedisEnabled) {
@@ -68,6 +70,7 @@ const toggleLike = async ({
       { [entityType]: entityId, likedBy: userId },
       { upsert: true, new: true }
     );
+    await model.findByIdAndUpdate(entityId, { $inc: { likesCount: 1 } });
     return { liked: true, message: `${entityType} liked` };
   }
 };
@@ -89,6 +92,11 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
     dirtySet: 'videos:dirty',
   });
 
+  // Invalidate cached video payload so likesCount reflects immediately
+  if (isRedisEnabled) {
+    await redisDel(`video:${videoId}`);
+  }
+
   return res
     .status(result.liked ? 201 : 200)
     .json(
@@ -107,6 +115,10 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
   if (!isValidObjectId(commentId))
     throw new ApiError(400, 'Invalid comment ID');
 
+  // Fetch the comment once to know which video cache to invalidate
+  const commentDoc = await Comment.findById(commentId).select('video');
+  if (!commentDoc) throw new ApiError(404, 'Comment not found');
+
   const result = await toggleLike({
     entityType: 'comment',
     entityId: commentId,
@@ -116,6 +128,11 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
     redisUserKey: `user:${userId}:likedComments`,
     dirtySet: 'comments:dirty',
   });
+
+  // Bust cached comment tree for the associated video so likes update in UI
+  if (isRedisEnabled && commentDoc.video) {
+    await redisIncr(`video:${commentDoc.video.toString()}:comments:version`);
+  }
 
   return res
     .status(result.liked ? 201 : 200)
@@ -162,7 +179,14 @@ const getLikes = async ({ entityType, entityId, model, redisKey, userId }) => {
 
   let count = 0;
   if (isRedisEnabled) {
-    count = parseInt((await redisGet(redisKey)) || '0');
+    const cached = await redisGet(redisKey);
+    if (cached !== null && cached !== undefined) {
+      count = parseInt(cached || '0', 10);
+    } else {
+      // seed from DB when Redis missing
+      count = await Like.countDocuments({ [entityType]: entityId });
+      await redisSet(redisKey, count);
+    }
   }
 
   let isLiked = false;

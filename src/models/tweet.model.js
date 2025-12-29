@@ -38,6 +38,10 @@ const tweetSchema = new Schema(
         default: [],
       },
     ],
+    likesCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

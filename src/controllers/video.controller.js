@@ -1,4 +1,5 @@
 import fs from 'fs';
+import jwt from 'jsonwebtoken';
 import { isValidObjectId } from 'mongoose';
 import { Video } from '../models/video.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -55,6 +56,8 @@ const formatVideo = (video) => ({
 
 // GET ALL VIDEOS
 const getAllVideos = asyncHandler(async (req, res) => {
+  const mergedQuery = { ...(req.query || {}), ...(req.filter || {}) };
+
   const {
     page = 1,
     limit = 10,
@@ -62,18 +65,24 @@ const getAllVideos = asyncHandler(async (req, res) => {
     sortBy = 'createdAt',
     sortType = 'desc',
     isPublished,
-  } = req.query;
+  } = mergedQuery;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
 
-  const cacheKey = `videos:all:${pageNum}:${limitNum}:${searchQuery || ''}:${sortBy}:${sortType}:${isPublished || ''}`;
-  const cached = await redisGet(cacheKey);
-  if (cached)
-    return res.status(200).json({
-      success: true,
-      message: 'Videos fetched from cache',
-      data: cached,
-    });
+  const videosVersion =
+    (isRedisEnabled && (await redisGet('videos:version'))) || 1;
+  const cacheKey = isRedisEnabled
+    ? `videos:v${videosVersion}:all:${pageNum}:${limitNum}:${searchQuery || ''}:${sortBy}:${sortType}:${isPublished || ''}`
+    : null;
+  if (isRedisEnabled && cacheKey) {
+    const cached = await redisGet(cacheKey);
+    if (cached)
+      return res.status(200).json({
+        success: true,
+        message: 'Videos fetched from cache',
+        data: cached,
+      });
+  }
 
   const matchCriteria = {};
   if (searchQuery) matchCriteria.title = { $regex: searchQuery, $options: 'i' };
@@ -87,8 +96,6 @@ const getAllVideos = asyncHandler(async (req, res) => {
     .limit(limitNum)
     .lean();
 
-  if (!videos.length) throw new ApiError(404, 'No videos found');
-
   const formattedVideos = videos.map(formatVideo);
   const totalVideos = await Video.countDocuments(matchCriteria);
 
@@ -99,11 +106,13 @@ const getAllVideos = asyncHandler(async (req, res) => {
     limit: limitNum,
   };
 
-  if (isRedisEnabled) await redisSet(cacheKey, response, 300);
+  if (isRedisEnabled && cacheKey) await redisSet(cacheKey, response, 300);
 
   res.status(200).json({
     success: true,
-    message: 'Videos fetched successfully',
+    message: videos.length
+      ? 'Videos fetched successfully'
+      : 'No videos found',
     data: response,
   });
 });
@@ -119,6 +128,13 @@ const publishAVideo = asyncHandler(async (req, res) => {
       400,
       'Title, description, video file, and thumbnail are required'
     );
+
+  if (!isRedisEnabled || !videoQueue) {
+    throw new ApiError(
+      503,
+      'Video processing is temporarily unavailable. Please try again later.'
+    );
+  }
 
   let uploadedThumb = null;
   let videoRecord = null;
@@ -174,29 +190,171 @@ const publishAVideo = asyncHandler(async (req, res) => {
   }
 });
 
-// GET VIDEO BY ID
+// 🎬 Controller: Get Video by ID
 const getVideoById = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const cacheKey = `video:${videoId}`;
 
-  if (isRedisEnabled) {
-    const cached = await redisGet(cacheKey);
-    if (cached) return res.status(200).json({ success: true, data: cached });
+  // 1️⃣ Try Redis cache first
+  const cached = await redisGet(cacheKey);
+  let userId = null;
+
+  // ✅ Try getting token from either cookie or Authorization header
+  const token =
+    req.cookies?.accessToken ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null);
+
+  // Decode token safely (don't throw errors)
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+      userId = decoded._id;
+    } catch (err) {
+      console.log('⚠️ Token invalid or expired, skipping watch history');
+    }
   }
 
+  // 2️⃣ If cached version found
+  if (cached) {
+    console.log('⚡ Served from Redis cache');
+
+    // Add to watch history only for valid users
+    if (userId) {
+      await addToWatchHistory(userId, videoId);
+      console.log('✅ Watch history updated (from cache)');
+    }
+
+    return res.status(200).json({ success: true, data: cached });
+  }
+
+  // 3️⃣ Fetch from MongoDB if not cached
   const video = await Video.findById(videoId).populate(
     'owner',
     'fullName username avatar'
   );
+
   if (!video) throw new ApiError(404, 'Video not found');
 
-  const videoData = formatVideo(video.toObject());
+  const videoData = video.toObject();
 
+  // 4️⃣ Cache the fresh video
   if (isRedisEnabled) await redisSet(cacheKey, videoData, 600);
+  console.log('🧠 Video cached in Redis:', videoId);
 
+  // 5️⃣ Add to watch history for authenticated users
+  if (userId) {
+    await addToWatchHistory(userId, videoId);
+    console.log('✅ Watch history updated (from DB)');
+  }
+
+  // 6️⃣ Send Response
   res.status(200).json({ success: true, data: videoData });
 });
+// ====================== Helper Function ======================
 
+// Limit how many videos are stored in history
+const HISTORY_LIMIT = 50;
+
+// 🧩 Helper Function: Add to Watch History
+const addToWatchHistory = async (userId, videoId) => {
+  console.log('➡️ Entering addToWatchHistory');
+
+  try {
+    if (!userId || !videoId) return;
+
+    const user = await User.findById(userId).select('watchHistory');
+    if (!user) return;
+
+    // 🔍 Check if video already exists
+    const existingIndex = user.watchHistory.findIndex(
+      (id) => id.toString() === videoId.toString()
+    );
+
+    // 🧹 Remove old entry if exists
+    if (existingIndex > -1) {
+      user.watchHistory.splice(existingIndex, 1);
+    }
+
+    // ⏫ Add new video at start
+    user.watchHistory.unshift(videoId);
+
+    // 📉 Limit history to 50
+    if (user.watchHistory.length > HISTORY_LIMIT) {
+      user.watchHistory = user.watchHistory.slice(0, HISTORY_LIMIT);
+    }
+
+    await user.save();
+    console.log('✅ Watch history updated:', user.watchHistory.length, 'items');
+
+    // 🔄 Update Redis cache (optional)
+    if (isRedisEnabled) {
+      const cacheKey = `watchHistory:${userId}`;
+      const updatedHistory = await User.findById(userId)
+        .populate({
+          path: 'watchHistory',
+          select: 'title thumbnail duration owner',
+          populate: { path: 'owner', select: 'fullName username avatar' },
+        })
+        .select('watchHistory');
+
+      await redisSet(cacheKey, updatedHistory.watchHistory, 600); // Cache for 10 min
+      console.log('🧠 Redis cache updated for watch history');
+    }
+  } catch (err) {
+    console.error('❌ Error adding to watch history:', err);
+  }
+};
+
+const getWatchHistory = asyncHandler(async (req, res) => {
+  const userId = req.user?._id; // Assuming authentication middleware sets req.user
+
+  if (!userId) throw new ApiError(401, 'User not authenticated');
+
+  const cacheKey = `watchHistory:${userId}`;
+
+  // ✅ 1. Try fetching from Redis
+  if (isRedisEnabled) {
+    const cachedHistory = await redisGet(cacheKey);
+    if (cachedHistory) {
+      return res.status(200).json({
+        success: true,
+        source: 'cache',
+        data: cachedHistory,
+      });
+    }
+  }
+
+  // ✅ 2. Fetch from MongoDB
+  const user = await User.findById(userId)
+    .populate({
+      path: 'watchHistory',
+      select: 'title thumbnail duration views createdAt owner',
+      populate: {
+        path: 'owner',
+        select: 'fullName username avatar',
+      },
+    })
+    .select('watchHistory');
+
+  if (!user) throw new ApiError(404, 'User not found');
+
+  const watchHistory = user.watchHistory || [];
+
+  // ✅ 3. Cache result in Redis for faster future loads
+  if (isRedisEnabled) {
+    await redisSet(cacheKey, watchHistory, 600); // Cache for 10 minutes
+  }
+
+  // ✅ 4. Return the response
+  res.status(200).json({
+    success: true,
+    count: watchHistory.length,
+    source: 'database',
+    data: watchHistory,
+  });
+});
 
 // GET VIDEOS BY USER
 const getVideosByUser = asyncHandler(async (req, res) => {
@@ -269,13 +427,16 @@ const deleteVideo = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
   const video = await getVideoOrFail(videoId);
 
+  // dY-`�,? Delete from Cloudinary
   if (video.videoFile?.public_id)
     await deleteFromCloudinary(video.videoFile.public_id, 'video');
   if (video.thumbnail?.public_id)
     await deleteFromCloudinary(video.thumbnail.public_id, 'image');
 
+  // dY1 Delete from MongoDB
   await video.deleteOne();
 
+  // dY� Redis cleanup
   if (isRedisEnabled) {
     await redisDel(`video:${videoId}`);
     await redisDel(`user:${video.owner.toString()}:videos`);
@@ -286,38 +447,48 @@ const deleteVideo = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, null, 'Video deleted successfully'));
 });
-
 // RECORD VIEW
 const recordView = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
-  const userId = req.user._id.toString();
+  const userKey =
+    req.user?._id?.toString() ||
+    req.ip || // fallback to IP for guests
+    'anonymous';
 
   await getVideoOrFail(videoId);
 
   if (isRedisEnabled) {
     const userViewedKey = `video:${videoId}:viewed`;
 
-    // Add user to set
-    const added = await redisSAdd(userViewedKey, userId);
+    // Add user/IP to set
+    const added = await redisSAdd(userViewedKey, userKey);
 
     if (added) {
-      // Increment views
+      // Increment views (Redis)
       await redisIncr(`video:${videoId}:views`);
 
       // Mark video as dirty for eventual DB sync
       await redisSAdd('videos:dirty', videoId);
 
-      // Set 24-hour expiry for this set if not already set
-      // (so user can count as new viewer after 24h)
-      await redisExpire(userViewedKey, 24 * 60 * 60); // seconds
+      // Also persist the view count for immediate consistency in API responses
+      await Video.findByIdAndUpdate(videoId, { $inc: { viewsCount: 1 } });
+
+      // Set 24-hour expiry so the same user/IP counts again after 24h
+      await redisExpire(userViewedKey, 24 * 60 * 60);
+
+      // Bust caches so views update in responses
+      await redisDel(`video:${videoId}`);
+      await redisIncr('videos:version');
     }
 
-    // Always update or create the View document for watch history
-    await View.findOneAndUpdate(
-      { video: videoId, user: userId },
-      { $inc: { watchTime: 1 } }, // Example: increment watch time
-      { upsert: true, new: true }
-    );
+    // Only track watch history for authenticated users
+    if (req.user?._id) {
+      await View.findOneAndUpdate(
+        { video: videoId, user: req.user._id },
+        { $inc: { watchTime: 1 } },
+        { upsert: true, new: true }
+      );
+    }
   } else {
     // fallback to MongoDB (not recommended for high traffic)
     await Video.findByIdAndUpdate(videoId, { $inc: { viewsCount: 1 } });
@@ -452,4 +623,5 @@ export {
   searchVideos,
   getVideoOrFail,
   streamVideo,
+  getWatchHistory,
 };
