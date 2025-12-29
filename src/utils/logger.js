@@ -83,6 +83,7 @@ export const requestLogger = (req, res, next) => {
         userAgent: req.get('User-Agent'),
         ip: req.ip,
         userId: req.user?._id || null,
+        requestId: req.id || null,
       });
     } catch (err) {
       console.error('[Logger] Request logging failed:', err);

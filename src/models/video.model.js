@@ -75,4 +75,10 @@ const videoSchema = new Schema(
 
 videoSchema.plugin(mongooseAggregatePaginate);
 
+// Indexes for common filters/sorts
+videoSchema.index({ owner: 1, createdAt: -1 });
+videoSchema.index({ isPublished: 1, createdAt: -1 });
+videoSchema.index({ viewsCount: -1 });
+videoSchema.index({ likesCount: -1 });
+
 export const Video = mongoose.model('Video', videoSchema);

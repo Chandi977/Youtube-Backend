@@ -19,6 +19,13 @@ import {
 import { getLikedVideos } from '../controllers/like.controller.js';
 import { upload } from '../middlewares/multer.middleware.js';
 import { verifyJWT } from '../middlewares/auth.middleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import {
+  registerSchema,
+  loginSchema,
+  refreshSchema,
+  changePasswordSchema,
+} from '../validators/auth.schema.js';
 
 const router = Router();
 
@@ -31,14 +38,15 @@ router.post(
     { name: 'avatar', maxCount: 1 },
     { name: 'coverImage', maxCount: 1 },
   ]),
+  validate({ body: registerSchema }),
   registerUser
 );
 
 // User login
-router.post('/login', loginUser);
+router.post('/login', validate({ body: loginSchema }), loginUser);
 
 // Refresh access token
-router.post('/refresh-token', refreshAccessToken);
+router.post('/refresh-token', validate({ body: refreshSchema }), refreshAccessToken);
 
 // -------------------- PROTECTED ROUTES --------------------
 router.use(verifyJWT); // All routes below require authentication
@@ -50,7 +58,11 @@ router.post('/logout', logoutUser);
 router.get('/me', getCurrentUser);
 
 // Change current password
-router.patch('/change-password', changeCurrentPassword);
+router.patch(
+  '/change-password',
+  validate({ body: changePasswordSchema }),
+  changeCurrentPassword
+);
 
 // Update account details
 router.patch('/update-account', updateAccountDetails);

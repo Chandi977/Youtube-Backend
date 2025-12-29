@@ -6,6 +6,7 @@ import { User } from '../models/user.model.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { redisSet, isRedisEnabled } from '../utils/upstash.js';
+import { getAuthCookieOptions } from '../services/authCookies.js';
 
 const createAccessToken = (userId) =>
   jwt.sign({ _id: userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -17,12 +18,7 @@ const createRefreshToken = (userId) =>
     expiresIn: '7d',
   });
 
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-};
+const cookieOptions = getAuthCookieOptions();
 
 // ---------------- GOOGLE ----------------
 const googleClient = new OAuth2Client(

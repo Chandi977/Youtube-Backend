@@ -29,20 +29,15 @@ const toggleLike = async ({
   redisUserKey,
   dirtySet,
 }) => {
-  let hasLiked = false;
-  // The DB check is crucial for existence, let's keep it.
-  if (!(await model.findById(entityId))) {
+  const entityExists = await model.findById(entityId).select('_id');
+  if (!entityExists) {
     throw new ApiError(404, `${entityType} not found`);
   }
-  if (isRedisEnabled) {
-    const likedSet = await redisSMembers(redisUserKey);
-    hasLiked = likedSet.includes(entityId);
-  } else {
-    hasLiked = !!(await Like.findOne({
-      [entityType]: entityId,
-      likedBy: userId,
-    }));
-  }
+  const existingLike = await Like.findOne({
+    [entityType]: entityId,
+    likedBy: userId,
+  }).select('_id');
+  const hasLiked = !!existingLike;
 
   if (hasLiked) {
     if (isRedisEnabled) {
@@ -95,6 +90,7 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
   // Invalidate cached video payload so likesCount reflects immediately
   if (isRedisEnabled) {
     await redisDel(`video:${videoId}`);
+    await redisIncr('videos:version');
   }
 
   return res

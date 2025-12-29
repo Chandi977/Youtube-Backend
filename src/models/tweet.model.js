@@ -58,6 +58,7 @@ tweetSchema.pre('validate', function (next) {
 // -------------------- Indexes --------------------
 tweetSchema.index({ owner: 1, createdAt: -1 }); // quick fetch by user timeline
 tweetSchema.index({ parentTweet: 1, createdAt: 1 }); // quick fetch for replies
+tweetSchema.index({ likesCount: -1, createdAt: -1 });
 
 // -------------------- Virtuals --------------------
 // Count number of replies for a tweet

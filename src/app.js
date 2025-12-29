@@ -18,6 +18,9 @@ import logger, { requestLogger } from './utils/logger.js';
 import { isRedisEnabled } from './utils/upstash.js';
 import errorHandler from './middlewares/errorHandler.middleware.js';
 import { initializeSocket } from './socket/socketHandler.js';
+import { requestId } from './middlewares/requestId.middleware.js';
+import { openapiSpec } from './openapi.js';
+import swaggerUi from 'swagger-ui-express';
 
 import passport from 'passport';
 import './config/passport.js'; // Your Passport strategies
@@ -26,27 +29,6 @@ const app = express();
 
 // Trust the first proxy in front of the app, which is Render's load balancer.
 app.set('trust proxy', 1);
-
-// Configure CORS
-// CORS configuration
-const corsOptions = {
-  origin:
-    process.env.NODE_ENV === 'production'
-      ? process.env.CORS_ORIGIN?.split(',')
-      : ['http://localhost:5173'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-  exposedHeaders: ['Set-Cookie'],
-};
-
-app.use(cors(corsOptions));
-
-// Enable pre-flight for all routes
-app.options('*', cors(corsOptions));
-
-// Cookie parser middleware
-app.use(cookieParser());
 
 // Create HTTP server for Socket.IO
 const server = createServer(app);
@@ -104,27 +86,28 @@ console.log('Allowed Origins:', allowedOrigins);
 // Initialize Socket.IO after defining allowedOrigins
 const io = initializeSocket(server, allowedOrigins);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like Postman, mobile apps, server-to-server)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like Postman, mobile apps, server-to-server)
+    if (!origin) return callback(null, true);
 
-      // Check if the origin is in our allowed list (string or regex)
-      const isAllowed = allowedOrigins.some((allowed) =>
-        allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
-      );
+    // Check if the origin is in our allowed list (string or regex)
+    const isAllowed = allowedOrigins.some((allowed) =>
+      allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
+    );
 
-      if (isAllowed) return callback(null, true);
+    if (isAllowed) return callback(null, true);
 
-      return callback(new Error(`Not allowed by CORS: ${origin}`));
-    },
-    credentials: true, // important for cookies/auth
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'Accept-Ranges'],
-    exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
-  })
-);
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  credentials: true, // important for cookies/auth
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'Accept-Ranges'],
+  exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // ------------------------
 // Body parsers
@@ -133,6 +116,9 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 app.use(express.static('public'));
+
+// Request ID middleware
+app.use(requestId);
 
 // ------------------------
 // Request Logger
@@ -177,6 +163,8 @@ import authRoutes from './routes/auth.routes.js'; // New auth routes
 
 // Existing routes
 app.use('/api/v1/healthcheck', healthcheckRouter);
+app.get('/api/v1/openapi.json', (req, res) => res.json(openapiSpec));
+app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/videos', videoRouter);
 app.use('/api/v1/comments', commentRouter);

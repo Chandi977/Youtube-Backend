@@ -8,6 +8,7 @@ import {
   uploadOnCloudinary,
   deleteFromCloudinary,
 } from '../../utils/cloudinary.js';
+import { getAuthCookieOptions } from '../../services/authCookies.js';
 import {
   redisGet,
   redisSet,
@@ -98,15 +99,7 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 // LOGIN
-const isProduction = process.env.NODE_ENV === 'production';
-
-const cookieOptions = {
-  httpOnly: true,
-  secure: isProduction,
-  sameSite: isProduction ? 'none' : 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  // domain: isProduction ? ".yourdomain.com" : undefined, // only if same root domain
-};
+const cookieOptions = getAuthCookieOptions();
 
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
@@ -158,14 +151,24 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     req.cookies.refreshToken || req.body.refreshToken;
   if (!incomingRefreshToken) throw new ApiError(401, 'Unauthorized');
 
-  const decoded = jwt.verify(
-    incomingRefreshToken,
-    process.env.REFRESH_TOKEN_SECRET
-  );
+  let decoded;
+  try {
+    decoded = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+  } catch (err) {
+    res.clearCookie('accessToken', cookieOptions);
+    res.clearCookie('refreshToken', cookieOptions);
+    throw new ApiError(401, 'Invalid or expired refresh token');
+  }
 
   const user = await User.findById(decoded._id);
-  if (!user || user.refreshToken !== incomingRefreshToken)
+  if (!user || user.refreshToken !== incomingRefreshToken) {
+    res.clearCookie('accessToken', cookieOptions);
+    res.clearCookie('refreshToken', cookieOptions);
     throw new ApiError(401, 'Invalid or expired token');
+  }
 
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id

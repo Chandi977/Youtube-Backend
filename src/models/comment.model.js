@@ -59,4 +59,9 @@ commentSchema.virtual('replies', {
 // Plugin for pagination
 commentSchema.plugin(mongooseAggregatePaginate);
 
+// Indexes for comment queries
+commentSchema.index({ video: 1, parent: 1, createdAt: -1 });
+commentSchema.index({ tweet: 1, parent: 1, createdAt: -1 });
+commentSchema.index({ owner: 1, createdAt: -1 });
+
 export const Comment = mongoose.model('Comment', commentSchema);

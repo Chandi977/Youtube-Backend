@@ -24,24 +24,26 @@ const handleJWTError = () =>
 const handleJWTExpiredError = () =>
   new ApiError('Your token has expired! Please log in again.', 401);
 
-const sendErrorDev = (err, res) => {
+const sendErrorDev = (err, req, res) => {
   res.status(err.statusCode).json({
     statusCode: err.statusCode,
     success: false,
     message: err.message,
     error: err,
     stack: err.stack,
+    requestId: req.id || null,
     data: {},
   });
 };
 
-const sendErrorProd = (err, res) => {
+const sendErrorProd = (err, req, res) => {
   if (err.isOperational) {
     // Operational, trusted error: send message to client
     res.status(err.statusCode).json({
       statusCode: err.statusCode,
       success: false,
       message: err.message,
+      requestId: req.id || null,
       data: {},
     });
   } else {
@@ -52,6 +54,7 @@ const sendErrorProd = (err, res) => {
       statusCode: 500,
       success: false,
       message: 'Something went wrong!',
+      requestId: req.id || null,
       data: {},
     });
   }
@@ -62,7 +65,7 @@ const globalErrorHandler = (err, req, res, next) => {
   err.status = err.status || 'error';
 
   if (process.env.NODE_ENV === 'development') {
-    sendErrorDev(err, res);
+    sendErrorDev(err, req, res);
   } else {
     let error = { ...err };
     error.message = err.message;
@@ -74,7 +77,7 @@ const globalErrorHandler = (err, req, res, next) => {
     if (error.name === 'JsonWebTokenError') error = handleJWTError();
     if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
 
-    sendErrorProd(error, res);
+    sendErrorProd(error, req, res);
   }
 };
 
