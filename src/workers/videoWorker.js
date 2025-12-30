@@ -3,6 +3,7 @@ import { redisConnection } from '../config/redis.js';
 import { processVideoPipeline } from '../utils/videoProcessor.js';
 import { Video } from '../models/video.model.js';
 import logger from '../utils/logger.js';
+import { recordWorkerJob } from '../observability/metrics.js';
 
 export const createVideoWorker = (io) => {
   if (!redisConnection) {
@@ -13,46 +14,47 @@ export const createVideoWorker = (io) => {
   const worker = new Worker(
     'video-processing',
     async (job) => {
-      const { videoLocalPath, thumbnailLocalPath, userId, videoData } =
-        job.data;
+      const { videoLocalPath, userId, videoData } = job.data;
+      const startedAt = Date.now();
 
       try {
         logger.info(`[Worker] Starting video processing for job ${job.id}`);
 
-        // The existing video processor is already great, we just need to call it.
         const { masterPlaylist, duration, variants } =
           await processVideoPipeline(videoLocalPath, io, userId);
 
-        // Convert the variants array into an object map (e.g., { '720p': { url: '...' } })
         const variantsMap = variants.reduce((acc, variant) => {
           if (variant && variant.label) {
             acc[variant.label] = variant;
           }
           return acc;
         }, {});
-        // Update the video record with the processing result
+
         const video = await Video.findByIdAndUpdate(
           videoData.videoId,
           {
             'videoFile.url': masterPlaylist,
-            'videoFile.eager': variantsMap, // Save the object map
+            'videoFile.eager': variantsMap,
             duration: Math.round(duration || 0),
-            status: 'published', // Mark as published
+            status: 'published',
             isPublished: true,
           },
           { new: true }
         );
 
-        logger.info(`[Worker] ✅ Video processing completed for job ${job.id}`);
+        const durationSec = (Date.now() - startedAt) / 1000;
+        recordWorkerJob('video-processing', 'completed', durationSec);
+        logger.info(`[Worker] Video processing completed for job ${job.id}`);
         return video;
       } catch (error) {
+        const durationSec = (Date.now() - startedAt) / 1000;
+        recordWorkerJob('video-processing', 'failed', durationSec);
         logger.error(
-          `[Worker] ❌ Video processing failed for job ${job.id}:`,
+          `[Worker] Video processing failed for job ${job.id}:`,
           error
         );
-        // Update video status to 'failed' in DB
         await Video.findByIdAndUpdate(videoData.videoId, { status: 'failed' });
-        throw error; // Re-throw to let BullMQ handle the failure
+        throw error;
       }
     },
     {

@@ -19,15 +19,17 @@ const logFormat = winston.format.combine(
   winston.format.json()
 );
 
-// Create logger instance
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: logFormat,
-  defaultMeta: {
-    service: 'youtube-clone-backend',
-    version: process.env.npm_package_version || '1.0.0',
-  },
-  transports: [
+const transports = [];
+const isTestEnv = process.env.NODE_ENV === 'test';
+
+if (isTestEnv) {
+  transports.push(
+    new winston.transports.Console({
+      silent: true,
+    })
+  );
+} else {
+  transports.push(
     new winston.transports.File({
       filename: path.join(logDir, 'error.log'),
       level: 'error',
@@ -40,23 +42,38 @@ const logger = winston.createLogger({
       maxsize: 5242880,
       maxFiles: 5,
       handleExceptions: true,
-    }),
-  ],
-  exceptionHandlers: [
-    new winston.transports.File({
-      filename: path.join(logDir, 'exceptions.log'),
-    }),
-  ],
-  rejectionHandlers: [
-    new winston.transports.File({
-      filename: path.join(logDir, 'rejections.log'),
-    }),
-  ],
+    })
+  );
+}
+
+// Create logger instance
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: logFormat,
+  defaultMeta: {
+    service: 'youtube-clone-backend',
+    version: process.env.npm_package_version || '1.0.0',
+  },
+  transports,
+  exceptionHandlers: isTestEnv
+    ? []
+    : [
+        new winston.transports.File({
+          filename: path.join(logDir, 'exceptions.log'),
+        }),
+      ],
+  rejectionHandlers: isTestEnv
+    ? []
+    : [
+        new winston.transports.File({
+          filename: path.join(logDir, 'rejections.log'),
+        }),
+      ],
   exitOnError: false, // Never exit on logger errors
 });
 
 // Console logging in development
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && !isTestEnv) {
   logger.add(
     new winston.transports.Console({
       format: winston.format.combine(
@@ -72,10 +89,23 @@ if (process.env.NODE_ENV !== 'production') {
 export const requestLogger = (req, res, next) => {
   const startTime = Date.now();
 
+  try {
+    logger.info('HTTP Request Start', {
+      method: req.method,
+      url: req.url,
+      userAgent: req.get('User-Agent'),
+      ip: req.ip,
+      userId: req.user?._id || null,
+      requestId: req.id || null,
+    });
+  } catch (err) {
+    console.error('[Logger] Request start logging failed:', err);
+  }
+
   res.on('finish', () => {
     const responseTime = Date.now() - startTime;
     try {
-      logger.info('HTTP Request', {
+      logger.info('HTTP Request End', {
         method: req.method,
         url: req.url,
         statusCode: res.statusCode,

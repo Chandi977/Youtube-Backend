@@ -21,23 +21,26 @@ import { initializeSocket } from './socket/socketHandler.js';
 import { requestId } from './middlewares/requestId.middleware.js';
 import { openapiSpec } from './openapi.js';
 import swaggerUi from 'swagger-ui-express';
+import {
+  metricsMiddleware,
+  metricsRegister,
+  updateQueueMetrics,
+} from './observability/metrics.js';
+import { videoQueue } from './queues/videoQueue.js';
 
 import passport from 'passport';
 import './config/passport.js'; // Your Passport strategies
 
 const app = express();
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 // Trust the first proxy in front of the app, which is Render's load balancer.
 app.set('trust proxy', 1);
 
 // Create HTTP server for Socket.IO
 const server = createServer(app);
+let io = null;
 
-// Make io available in requests for live streaming
-app.use((req, res, next) => {
-  req.io = io;
-  next();
-});
 app.use(passport.initialize());
 
 // Import routes
@@ -81,10 +84,22 @@ const envOrigins = process.env.CORS_ORIGIN
 // Combine and create a unique list of allowed origins.
 const allowedOrigins = [...new Set([...baseAllowedOrigins, ...envOrigins])];
 
-console.log('Allowed Origins:', allowedOrigins);
+if (!isTestEnv) {
+  console.log('Allowed Origins:', allowedOrigins);
+}
 
 // Initialize Socket.IO after defining allowedOrigins
-const io = initializeSocket(server, allowedOrigins);
+if (!isTestEnv) {
+  io = initializeSocket(server, allowedOrigins);
+} else {
+  logger.info('Test mode: Socket.IO disabled.');
+}
+
+// Make io available in requests for live streaming
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -119,6 +134,9 @@ app.use(express.static('public'));
 
 // Request ID middleware
 app.use(requestId);
+
+// Metrics middleware
+app.use(metricsMiddleware);
 
 // ------------------------
 // Request Logger
@@ -163,6 +181,21 @@ import authRoutes from './routes/auth.routes.js'; // New auth routes
 
 // Existing routes
 app.use('/api/v1/healthcheck', healthcheckRouter);
+app.get('/api/v1/metrics', async (req, res) => {
+  try {
+    await updateQueueMetrics(videoQueue);
+    res.setHeader('Content-Type', metricsRegister.contentType);
+    res.end(await metricsRegister.metrics());
+  } catch (err) {
+    res.status(500).json({
+      statusCode: 500,
+      success: false,
+      message: 'Failed to collect metrics',
+      requestId: req.id || null,
+      data: {},
+    });
+  }
+});
 app.get('/api/v1/openapi.json', (req, res) => res.json(openapiSpec));
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 app.use('/api/v1/users', userRouter);
@@ -190,14 +223,14 @@ app.use(errorHandler);
 // ------------------------
 // Start video worker only when Redis is available
 let videoWorker = null;
-if (isRedisEnabled) {
+if (!isTestEnv && isRedisEnabled) {
   videoWorker = createVideoWorker(io);
-} else {
+} else if (!isTestEnv) {
   logger.warn('Redis disabled; video processing worker not started.');
 }
 
 const SYNC_LIKES_INTERVAL = Number(process.env.SYNC_LIKES_INTERVAL_MS) || 30000;
-if (isRedisEnabled) {
+if (!isTestEnv && isRedisEnabled) {
   setInterval(async () => {
     try {
       await syncLikes();
@@ -218,15 +251,17 @@ process.on('SIGTERM', async () => {
 // Heart Ticker
 // ------------------------
 const HEART_TICKER_INTERVAL = 5 * 60 * 1000;
-setInterval(async () => {
-  try {
-    const url = process.env.APP_URL || 'http://localhost:8000';
-    await fetch(url);
-    logger.info(`[HeartTicker] Pinged ${url} to stay awake`);
-  } catch (err) {
-    logger.error('[HeartTicker] Failed:', err);
-  }
-}, HEART_TICKER_INTERVAL);
+if (!isTestEnv) {
+  setInterval(async () => {
+    try {
+      const url = process.env.APP_URL || 'http://localhost:8000';
+      await fetch(url);
+      logger.info(`[HeartTicker] Pinged ${url} to stay awake`);
+    } catch (err) {
+      logger.error('[HeartTicker] Failed:', err);
+    }
+  }, HEART_TICKER_INTERVAL);
+}
 
 // Export both app and server
 export { app, server };
